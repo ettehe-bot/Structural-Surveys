@@ -153,13 +153,12 @@
       layout: { "text-field": ["get", "text"], "text-font": ["Noto Sans Regular"], "text-size": ["interpolate", ["linear"], ["zoom"], 15, 9, 19, 13], "text-max-width": 14 },
       paint: { "text-color": ["get", "color"], "text-halo-color": "#ffffff", "text-halo-width": 1.5 } }, before);
 
-    $("#btnBase").classList.remove("hidden");
+    $("#btnLayers").classList.remove("hidden");
     setBaseVisible(await DB.getSetting("baseVisible", true));
   }
 
   function setBaseVisible(on) {
     for (const id of BASE_LAYERS) if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
-    const b = $("#btnBase"); b.setAttribute("aria-pressed", on ? "true" : "false"); b.textContent = on ? "Basemap: on" : "Basemap: off";
     $("#chkBase").checked = on;
   }
 
@@ -287,14 +286,13 @@
     map.on("mouseenter", "overlay-assets", () => map.getCanvas().style.cursor = "pointer");
     map.on("mouseleave", "overlay-assets", () => map.getCanvas().style.cursor = "");
 
-    $("#btnOverlay").classList.remove("hidden");
+    $("#btnLayers").classList.remove("hidden");
     $("#legendAsset").classList.remove("hidden");
     setOverlayVisible(await DB.getSetting("overlayVisible", true));
   }
 
   function setOverlayVisible(on) {
     for (const id of OVERLAY_LAYERS) if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
-    const b = $("#btnOverlay"); b.setAttribute("aria-pressed", on ? "true" : "false"); b.textContent = on ? "Utilities: on" : "Utilities: off";
     $("#chkOverlay").checked = on;
     $("#legendAsset").classList.toggle("hidden", !on && !networkOn.size);
     if (!on && overlayPopup) { overlayPopup.remove(); overlayPopup = null; }
@@ -763,14 +761,6 @@
     $("#chkOverlay").addEventListener("change", async (e) => { setOverlayVisible(e.target.checked); await DB.setSetting("overlayVisible", e.target.checked); });
     $("#btnNetAll").addEventListener("click", async () => { for (const n of networks) await setNetworkVisible(n.id, true, false); await DB.setSetting("networksOn", [...networkOn]); });
     $("#btnNetNone").addEventListener("click", async () => { for (const n of networks) await setNetworkVisible(n.id, false, false); await DB.setSetting("networksOn", [...networkOn]); });
-    $("#btnBase").addEventListener("click", async () => {
-      const on = $("#btnBase").getAttribute("aria-pressed") !== "true";
-      setBaseVisible(on); await DB.setSetting("baseVisible", on);
-    });
-    $("#btnOverlay").addEventListener("click", async () => {
-      const on = $("#btnOverlay").getAttribute("aria-pressed") !== "true";
-      setOverlayVisible(on); await DB.setSetting("overlayVisible", on);
-    });
     $("#btnPlaceHere").addEventListener("click", () => endPlacing(true));
     $("#btnPlaceCancel").addEventListener("click", () => endPlacing(false));
     ["#fltSearch", "#fltStatus", "#fltUtility", "#fltUrgent"].forEach((s) => $(s).addEventListener("input", renderList));

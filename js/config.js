@@ -3,7 +3,7 @@
    so that exported rows can be appended without any mapping. */
 window.SURVEY_CONFIG = {
   appName: "Structural Survey",
-  version: "1.4.0",
+  version: "1.4.1",
 
   // Offline basemap coverage: Abu Dhabi International (Zayed International) Airport
   bbox: [54.56, 24.37, 54.76, 24.51],          // [minLon, minLat, maxLon, maxLat]
