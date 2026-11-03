@@ -3,7 +3,7 @@
    so that exported rows can be appended without any mapping. */
 window.SURVEY_CONFIG = {
   appName: "Structural Survey",
-  version: "1.2.0",
+  version: "1.4.0",
 
   // Offline basemap coverage: Abu Dhabi International (Zayed International) Airport
   bbox: [54.56, 24.37, 54.76, 24.51],          // [minLon, minLat, maxLon, maxLat]
@@ -12,8 +12,10 @@ window.SURVEY_CONFIG = {
   minZoom: 10,
   maxZoom: 19,
   basemapFile: "data/auh.pmtiles",
-  // Optional CAD overlay produced by tools\Convert-Drawing.ps1 (the app works without it)
-  overlayFile: "data/overlay.geojson",
+  // Optional CAD layers produced by tools\Build-AUH-Overlay.ps1 (the app works without them)
+  overlayFile: "data/overlay.geojson",       // utilities: manholes, pits, pipes (tappable)
+  drawingBaseFile: "data/basemap.geojson",   // site plan basemap from Xref_C-SPBASE.dwg (display only)
+  networksIndex: "data/utilities/index.json", // one layer per utility drawing (Utilites folder), each with its own switch
 
   // Value lists (identical to the Access combo boxes)
   lists: {

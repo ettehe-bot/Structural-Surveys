@@ -33,7 +33,26 @@
       <span><i class="dot dot-urgent"></i>Urgent</span>
       <span id="legendAsset" class="hidden"><i class="dot dot-asset"></i>Drawing asset</span>
     </div>
-    <button id="btnOverlay" class="map-toggle hidden" type="button" aria-pressed="true">Drawing: on</button>
+    <div class="map-toggles">
+      <button id="btnBase" class="map-toggle hidden" type="button" aria-pressed="true">Basemap: on</button>
+      <button id="btnOverlay" class="map-toggle hidden" type="button" aria-pressed="true">Utilities: on</button>
+      <button id="btnLayers" class="map-toggle hidden" type="button" aria-expanded="false" aria-controls="layersPanel">Networks…</button>
+    </div>
+    <div id="layersPanel" class="layers-panel hidden" role="dialog" aria-label="Map layers">
+      <header class="layers-head">
+        <b>Map layers</b>
+        <button id="btnLayersClose" class="btn" type="button">Close</button>
+      </header>
+      <div class="layers-body">
+        <div class="layers-group">Drawings</div>
+        <label class="layer-row" id="rowBase"><input type="checkbox" id="chkBase"><i class="swatch swatch-base"></i><span>Basemap <small>site plan</small></span></label>
+        <label class="layer-row" id="rowOverlay"><input type="checkbox" id="chkOverlay"><i class="swatch swatch-overlay"></i><span>Utilities <small>master plan</small></span></label>
+        <div class="layers-group">Utility networks
+          <span class="layers-actions"><button id="btnNetAll" type="button">All on</button><button id="btnNetNone" type="button">All off</button></span>
+        </div>
+        <div id="networkList"></div>
+      </div>
+    </div>
     <div class="map-actions">
       <button id="btnNewSurvey" class="fab" type="button">+ New survey</button>
     </div>

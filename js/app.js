@@ -112,7 +112,10 @@
       map.on("mouseleave", "survey-points", () => map.getCanvas().style.cursor = "");
       map.on("click", onMapClick);
       mapReady = true;
-      loadOverlay();
+      // site plan first, so the utilities are drawn on top of it
+      loadDrawingBase().catch((e) => console.warn("Basemap drawing not loaded", e))
+        .then(loadOverlay).catch((e) => console.warn("Utilities not loaded", e))
+        .then(loadNetworkIndex);
     });
     map.on("error", (e) => { if (e && e.error && !/glyph|font|pbf/i.test(String(e.error.message))) console.warn("map", e.error); });
   }
@@ -126,7 +129,134 @@
   const isNum = (v) => v !== null && v !== undefined && v !== "" && !isNaN(Number(v));
   function updateMapData() { if (mapReady) map.getSource("surveys").setData(surveysGeoJson()); }
 
-  // ------------------------------------------------------------ CAD overlay
+  // ------------------------------------------------------------ CAD site plan basemap (display only)
+  const BASE_LAYERS = ["base-lines", "base-points", "base-texts"];
+
+  async function loadDrawingBase() {
+    if (!C.drawingBaseFile) return;
+    let data;
+    try {
+      const resp = await fetch(C.drawingBaseFile);
+      if (!resp.ok) return;                       // no site plan published
+      data = await resp.json();
+    } catch (e) { console.warn("Basemap drawing not loaded", e); return; }
+    if (!data || !Array.isArray(data.features) || !data.features.length) return;
+
+    map.addSource("drawingbase", { type: "geojson", data, maxzoom: 20, tolerance: 0.3 });
+    const before = "survey-points";
+    map.addLayer({ id: "base-lines", type: "line", source: "drawingbase", filter: ["==", ["get", "kind"], "line"],
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": ["get", "color"], "line-opacity": 0.8, "line-width": ["interpolate", ["linear"], ["zoom"], 12, 0.3, 16, 0.8, 19, 1.6] } }, before);
+    map.addLayer({ id: "base-points", type: "circle", source: "drawingbase", minzoom: 16, filter: ["==", ["get", "kind"], "point"],
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 16, 0.8, 19, 2.5], "circle-color": ["get", "color"], "circle-opacity": 0.8 } }, before);
+    map.addLayer({ id: "base-texts", type: "symbol", source: "drawingbase", minzoom: 15, filter: ["==", ["get", "kind"], "text"],
+      layout: { "text-field": ["get", "text"], "text-font": ["Noto Sans Regular"], "text-size": ["interpolate", ["linear"], ["zoom"], 15, 9, 19, 13], "text-max-width": 14 },
+      paint: { "text-color": ["get", "color"], "text-halo-color": "#ffffff", "text-halo-width": 1.5 } }, before);
+
+    $("#btnBase").classList.remove("hidden");
+    setBaseVisible(await DB.getSetting("baseVisible", true));
+  }
+
+  function setBaseVisible(on) {
+    for (const id of BASE_LAYERS) if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
+    const b = $("#btnBase"); b.setAttribute("aria-pressed", on ? "true" : "false"); b.textContent = on ? "Basemap: on" : "Basemap: off";
+    $("#chkBase").checked = on;
+  }
+
+  // ------------------------------------------------------------ utility networks (one CAD drawing each)
+  let networks = [];                 // entries from data/utilities/index.json
+  const networkOn = new Set();       // ids switched on
+  const networkLoaded = new Set();   // ids whose data is on the map (loaded on first use)
+  const netLayerIds = (n) => [`net-${n.id}-lines`, `net-${n.id}-texts`, `net-${n.id}-assets`, `net-${n.id}-labels`];
+  const isVisible = (id) => map.getLayer(id) && map.getLayoutProperty(id, "visibility") !== "none";
+
+  async function loadNetworkIndex() {
+    if (!C.networksIndex) return;
+    try {
+      const resp = await fetch(C.networksIndex);
+      if (!resp.ok) return;
+      const j = await resp.json();
+      networks = Array.isArray(j.layers) ? j.layers.filter((n) => n && n.id && n.file) : [];
+    } catch (e) { console.warn("Utility networks not loaded", e); return; }
+    if (!networks.length) return;
+    renderNetworkList();
+    $("#btnLayers").classList.remove("hidden");
+    const saved = await DB.getSetting("networksOn", []);
+    for (const id of saved || []) if (networks.some((n) => n.id === id)) await setNetworkVisible(id, true, false);
+    updateLayersButton();
+  }
+
+  function renderNetworkList() {
+    const box = $("#networkList"); box.innerHTML = "";
+    for (const n of networks) {
+      const row = document.createElement("label"); row.className = "layer-row";
+      const cb = document.createElement("input"); cb.type = "checkbox"; cb.dataset.net = n.id;
+      cb.addEventListener("change", () => setNetworkVisible(n.id, cb.checked));
+      const sw = document.createElement("i"); sw.className = "swatch"; sw.style.setProperty("--c", n.color);
+      const name = document.createElement("span"); name.textContent = n.name;
+      if (n.assets) { const sm = document.createElement("small"); sm.textContent = `${n.assets} assets`; name.appendChild(sm); }
+      row.append(cb, sw, name); box.appendChild(row);
+    }
+  }
+
+  async function addNetworkLayers(n) {
+    const resp = await fetch(n.file);
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    const data = await resp.json();
+    const src = `net-${n.id}`, c = n.color;
+    map.addSource(src, { type: "geojson", data, maxzoom: 20, tolerance: 0.25 });
+    // networks sit above the site plan and below the master-plan utilities and the survey pins
+    const before = map.getLayer("overlay-lines") ? "overlay-lines" : "survey-points";
+    map.addLayer({ id: `net-${n.id}-lines`, type: "line", source: src, filter: ["==", ["get", "kind"], "line"],
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": c, "line-opacity": 0.9, "line-width": ["interpolate", ["linear"], ["zoom"], 12, 0.8, 16, 2, 19, 3.5] } }, before);
+    map.addLayer({ id: `net-${n.id}-texts`, type: "symbol", source: src, minzoom: 17, filter: ["==", ["get", "kind"], "text"],
+      layout: { "text-field": ["get", "text"], "text-font": ["Noto Sans Regular"], "text-size": 11, "text-max-width": 12 },
+      paint: { "text-color": c, "text-halo-color": "#ffffff", "text-halo-width": 1.5 } }, before);
+    map.addLayer({ id: `net-${n.id}-assets`, type: "circle", source: src, minzoom: 14, filter: ["==", ["get", "kind"], "point"],
+      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 14, 2.5, 16, 5, 19, 8], "circle-color": "#ffffff",
+        "circle-stroke-color": c, "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 14, 1.2, 17, 2.5] } }, before);
+    map.addLayer({ id: `net-${n.id}-labels`, type: "symbol", source: src, minzoom: 16, filter: ["all", ["==", ["get", "kind"], "point"], ["has", "label"]],
+      layout: { "text-field": ["get", "label"], "text-font": ["Noto Sans Medium"], "text-size": 11, "text-offset": [0, 1.0], "text-anchor": "top", "text-optional": true },
+      paint: { "text-color": "#1f2a52", "text-halo-color": "#ffffff", "text-halo-width": 1.5 } }, before);
+    map.on("mouseenter", `net-${n.id}-assets`, () => map.getCanvas().style.cursor = "pointer");
+    map.on("mouseleave", `net-${n.id}-assets`, () => map.getCanvas().style.cursor = "");
+    networkLoaded.add(n.id);
+  }
+
+  async function setNetworkVisible(id, on, save = true) {
+    const n = networks.find((x) => x.id === id);
+    if (!n) return;
+    const cb = document.querySelector(`#networkList input[data-net="${id}"]`);
+    if (on && !networkLoaded.has(id)) {
+      try { await addNetworkLayers(n); }
+      catch (e) { console.warn(e); toast(`${n.name} could not be loaded`, true); if (cb) cb.checked = false; return; }
+    }
+    for (const lid of netLayerIds(n)) if (map.getLayer(lid)) map.setLayoutProperty(lid, "visibility", on ? "visible" : "none");
+    if (on) networkOn.add(id); else networkOn.delete(id);
+    if (cb) cb.checked = on;
+    if (!on && overlayPopup && overlayPopup._netId === id) { overlayPopup.remove(); overlayPopup = null; }
+    if (save) await DB.setSetting("networksOn", [...networkOn]);
+    $("#legendAsset").classList.toggle("hidden", !(isVisible("overlay-assets") || networkOn.size));
+    updateLayersButton();
+  }
+
+  function updateLayersButton() {
+    const k = networkOn.size, b = $("#btnLayers");
+    b.textContent = k ? `Networks: ${k} on` : "Networks: off";
+    b.setAttribute("aria-pressed", k ? "true" : "false");
+  }
+
+  function toggleLayersPanel(show) {
+    const p = $("#layersPanel"), open = show === undefined ? p.classList.contains("hidden") : show;
+    p.classList.toggle("hidden", !open);
+    $("#btnLayers").setAttribute("aria-expanded", open ? "true" : "false");
+    $(".map-toggles").classList.toggle("hidden", open);
+    $("#rowBase").classList.toggle("hidden", !map.getSource("drawingbase"));
+    $("#rowOverlay").classList.toggle("hidden", !map.getSource("overlay"));
+  }
+
+  // ------------------------------------------------------------ CAD utilities overlay
   const OVERLAY_LAYERS = ["overlay-lines", "overlay-texts", "overlay-assets", "overlay-asset-labels"];
   let overlayPopup = null;
 
@@ -164,16 +294,17 @@
 
   function setOverlayVisible(on) {
     for (const id of OVERLAY_LAYERS) if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
-    const b = $("#btnOverlay"); b.setAttribute("aria-pressed", on ? "true" : "false"); b.textContent = on ? "Drawing: on" : "Drawing: off";
-    $("#legendAsset").classList.toggle("hidden", !on);
+    const b = $("#btnOverlay"); b.setAttribute("aria-pressed", on ? "true" : "false"); b.textContent = on ? "Utilities: on" : "Utilities: off";
+    $("#chkOverlay").checked = on;
+    $("#legendAsset").classList.toggle("hidden", !on && !networkOn.size);
     if (!on && overlayPopup) { overlayPopup.remove(); overlayPopup = null; }
   }
 
   // One tap handler: survey pins win over drawing assets; a finger-sized box makes small symbols easy to hit
   function onMapClick(ev) {
     const p = ev.point, box = [[p.x - 12, p.y - 12], [p.x + 12, p.y + 12]];
-    const asset = map.getLayer("overlay-assets") && map.getLayoutProperty("overlay-assets", "visibility") !== "none"
-      ? nearest(map.queryRenderedFeatures(box, { layers: ["overlay-assets"] }), ev.lngLat) : null;
+    const assetLayers = ["overlay-assets"].concat(networks.filter((n) => networkOn.has(n.id)).map((n) => `net-${n.id}-assets`)).filter(isVisible);
+    const asset = assetLayers.length ? nearest(map.queryRenderedFeatures(box, { layers: assetLayers }), ev.lngLat) : null;
     if (placing) {
       if (asset) { map.jumpTo({ center: asset.geometry.coordinates }); toast("Snapped to " + (asset.properties.label || "drawing asset")); }
       return;
@@ -195,17 +326,22 @@
   function showAssetPopup(f) {
     const pr = f.properties, [lon, lat] = f.geometry.coordinates;
     const label = (pr.label || "").trim();
+    // which utility network the tapped asset belongs to (layer ids are net-<id>-assets)
+    const layerId = (f.layer && f.layer.id) || "";
+    const net = networks.find((n) => layerId === `net-${n.id}-assets`) || null;
     const existing = label ? surveys.filter((s) => (s.ManholePitID || "").trim().toLowerCase() === label.toLowerCase()) : [];
     const div = document.createElement("div"); div.className = "asset-popup";
     const h = document.createElement("h4"); h.textContent = label || "Unlabelled asset"; div.appendChild(h);
     const meta = document.createElement("div"); meta.className = "meta";
-    meta.textContent = [pr.layer, pr.block, pr.attrs].filter(Boolean).join(" · "); div.appendChild(meta);
+    meta.textContent = [net ? net.name : "", pr.layer, pr.block, pr.attrs].filter(Boolean).join(" · "); div.appendChild(meta);
     const btnNew = document.createElement("button"); btnNew.type = "button"; btnNew.className = "btn btn-primary";
     btnNew.textContent = existing.length ? "Start another survey here" : "Start survey for this asset";
     btnNew.addEventListener("click", () => {
       overlayPopup.remove(); overlayPopup = null;
-      newSurvey({ ManholePitID: label, Latitude: Number(lat.toFixed(7)), Longitude: Number(lon.toFixed(7)),
-        LocationAccuracyMeters: "", LocationCapturedAt: nowIso(), LocationSource: "Drawing overlay (field app)" });
+      const loc = { ManholePitID: label, Latitude: Number(lat.toFixed(7)), Longitude: Number(lon.toFixed(7)),
+        LocationAccuracyMeters: "", LocationCapturedAt: nowIso(), LocationSource: "Drawing overlay (field app)" };
+      if (net && net.utility) { loc.UtilitySurveyed = net.utility; loc.UtilityOther = net.utility === "Other" ? (net.utilityOther || net.name) : ""; }
+      newSurvey(loc);
       toast("Position and ID taken from the drawing - confirm on site");
     });
     div.appendChild(btnNew);
@@ -217,6 +353,7 @@
     }
     if (overlayPopup) overlayPopup.remove();
     overlayPopup = new maplibregl.Popup({ closeButton: true, maxWidth: "280px", offset: 10 }).setLngLat([lon, lat]).setDOMContent(div).addTo(map);
+    overlayPopup._netId = net ? net.id : null;
   }
 
   // ------------------------------------------------------------ data
@@ -620,6 +757,16 @@
   function bind() {
     $$(".bottom-nav button").forEach((b) => b.addEventListener("click", () => { if (!placing) showView(b.dataset.view); }));
     $("#btnNewSurvey").addEventListener("click", () => newSurvey());
+    $("#btnLayers").addEventListener("click", () => toggleLayersPanel());
+    $("#btnLayersClose").addEventListener("click", () => toggleLayersPanel(false));
+    $("#chkBase").addEventListener("change", async (e) => { setBaseVisible(e.target.checked); await DB.setSetting("baseVisible", e.target.checked); });
+    $("#chkOverlay").addEventListener("change", async (e) => { setOverlayVisible(e.target.checked); await DB.setSetting("overlayVisible", e.target.checked); });
+    $("#btnNetAll").addEventListener("click", async () => { for (const n of networks) await setNetworkVisible(n.id, true, false); await DB.setSetting("networksOn", [...networkOn]); });
+    $("#btnNetNone").addEventListener("click", async () => { for (const n of networks) await setNetworkVisible(n.id, false, false); await DB.setSetting("networksOn", [...networkOn]); });
+    $("#btnBase").addEventListener("click", async () => {
+      const on = $("#btnBase").getAttribute("aria-pressed") !== "true";
+      setBaseVisible(on); await DB.setSetting("baseVisible", on);
+    });
     $("#btnOverlay").addEventListener("click", async () => {
       const on = $("#btnOverlay").getAttribute("aria-pressed") !== "true";
       setOverlayVisible(on); await DB.setSetting("overlayVisible", on);

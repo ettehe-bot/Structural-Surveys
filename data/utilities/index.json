@@ -1,0 +1,183 @@
+{
+    "generated":  "2026-11-03 10:47",
+    "layers":  [
+                   {
+                       "id":  "agl",
+                       "name":  "AGL pits and cables",
+                       "file":  "data/utilities/agl.geojson",
+                       "color":  "#e69f00",
+                       "assets":  8144,
+                       "lines":  4169,
+                       "sizeKB":  3317,
+                       "source":  "AGL.dwg",
+                       "utility":  "AGL"
+                   },
+                   {
+                       "id":  "awfon",
+                       "name":  "AWFON fibre cables",
+                       "file":  "data/utilities/awfon.geojson",
+                       "color":  "#6a3d9a",
+                       "assets":  298,
+                       "lines":  1982,
+                       "sizeKB":  390,
+                       "source":  "AWFON Cables.dwg",
+                       "utility":  "ICT / comms"
+                   },
+                   {
+                       "id":  "chilled-water",
+                       "name":  "Chilled water",
+                       "file":  "data/utilities/chilled-water.geojson",
+                       "color":  "#17becf",
+                       "assets":  16,
+                       "lines":  376,
+                       "sizeKB":  62,
+                       "source":  "C-UP-Chilled water.dwg",
+                       "utility":  "Other",
+                       "utilityOther":  "Chilled water"
+                   },
+                   {
+                       "id":  "comms",
+                       "name":  "Communication lines",
+                       "file":  "data/utilities/comms.geojson",
+                       "color":  "#c51b7d",
+                       "assets":  2707,
+                       "lines":  5206,
+                       "sizeKB":  2408,
+                       "source":  "Communication Line.dwg",
+                       "utility":  "ICT / comms"
+                   },
+                   {
+                       "id":  "fire-hydrants",
+                       "name":  "Fire hydrants",
+                       "file":  "data/utilities/fire-hydrants.geojson",
+                       "color":  "#d62728",
+                       "assets":  187,
+                       "lines":  1400,
+                       "sizeKB":  306,
+                       "source":  "Fire Hydrants_June 2016.dwg",
+                       "utility":  "Potable / Firewater"
+                   },
+                   {
+                       "id":  "fire-water",
+                       "name":  "Fire water line",
+                       "file":  "data/utilities/fire-water.geojson",
+                       "color":  "#a50f15",
+                       "assets":  373,
+                       "lines":  6337,
+                       "sizeKB":  989,
+                       "source":  "Fire Water Line.dwg",
+                       "utility":  "Potable / Firewater"
+                   },
+                   {
+                       "id":  "fuel",
+                       "name":  "Fuel pipeline",
+                       "file":  "data/utilities/fuel.geojson",
+                       "color":  "#b8860b",
+                       "assets":  278,
+                       "lines":  1872,
+                       "sizeKB":  326,
+                       "source":  "Fuel Pipe Line_Sep 2024.dwg",
+                       "utility":  "Other",
+                       "utilityOther":  "Fuel"
+                   },
+                   {
+                       "id":  "irrigation",
+                       "name":  "Irrigation",
+                       "file":  "data/utilities/irrigation.geojson",
+                       "color":  "#4daf4a",
+                       "assets":  172,
+                       "lines":  1639,
+                       "sizeKB":  307,
+                       "source":  "Irrigation.dwg",
+                       "utility":  "Other",
+                       "utilityOther":  "Irrigation"
+                   },
+                   {
+                       "id":  "light-poles",
+                       "name":  "MTC light poles",
+                       "file":  "data/utilities/light-poles.geojson",
+                       "color":  "#bcbd22",
+                       "assets":  303,
+                       "lines":  7829,
+                       "sizeKB":  1626,
+                       "source":  "MTC Light Poles 1.dwg",
+                       "utility":  "LV"
+                   },
+                   {
+                       "id":  "potable-water",
+                       "name":  "Potable water",
+                       "file":  "data/utilities/potable-water.geojson",
+                       "color":  "#1f77b4",
+                       "assets":  568,
+                       "lines":  1135,
+                       "sizeKB":  507,
+                       "source":  "Potable Water.dwg",
+                       "utility":  "Potable / Firewater"
+                   },
+                   {
+                       "id":  "power",
+                       "name":  "Power cables",
+                       "file":  "data/utilities/power.geojson",
+                       "color":  "#ff7f00",
+                       "assets":  549,
+                       "lines":  5101,
+                       "sizeKB":  954,
+                       "source":  "Power.dwg",
+                       "utility":  "HV"
+                   },
+                   {
+                       "id":  "sewerage",
+                       "name":  "Sewerage",
+                       "file":  "data/utilities/sewerage.geojson",
+                       "color":  "#8c510a",
+                       "assets":  475,
+                       "lines":  1432,
+                       "sizeKB":  436,
+                       "source":  "Sewerage Line.dwg",
+                       "utility":  "Sewage"
+                   },
+                   {
+                       "id":  "storm-water",
+                       "name":  "Storm water",
+                       "file":  "data/utilities/storm-water.geojson",
+                       "color":  "#01665e",
+                       "assets":  2694,
+                       "lines":  23535,
+                       "sizeKB":  4280,
+                       "source":  "Storm Water_Updated.dwg",
+                       "utility":  "Storm Water"
+                   },
+                   {
+                       "id":  "utility-corridor",
+                       "name":  "Utility corridor limit",
+                       "file":  "data/utilities/utility-corridor.geojson",
+                       "color":  "#737373",
+                       "assets":  0,
+                       "lines":  212,
+                       "sizeKB":  33,
+                       "source":  "Utility Corridor Limit.dwg"
+                   },
+                   {
+                       "id":  "hv-11kv",
+                       "name":  "11 kV cables (as-built)",
+                       "file":  "data/utilities/hv-11kv.geojson",
+                       "color":  "#e7298a",
+                       "assets":  10,
+                       "lines":  30,
+                       "sizeKB":  12,
+                       "source":  "Xref_11KV_Asbuilt_ADA-AUH0770023-19R-E205-DR-P-3001.dwg",
+                       "utility":  "HV"
+                   },
+                   {
+                       "id":  "hv-22kv",
+                       "name":  "22 kV and 132 kV cables",
+                       "file":  "data/utilities/hv-22kv.geojson",
+                       "color":  "#7b3294",
+                       "assets":  186,
+                       "lines":  598,
+                       "sizeKB":  172,
+                       "source":  "xref_22KV_ADA-AUH0770023-19R-E205-DR-P-3100-R2.dwg",
+                       "utility":  "HV"
+                   }
+               ]
+}
