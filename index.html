@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Structural Survey</title>
+<meta name="description" content="Offline structural survey capture for Abu Dhabi International Airport">
+<meta name="theme-color" content="#1f2a52">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="vendor/maplibre-gl.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">Structural Survey <span>AUH</span></div>
+  <div id="netStatus" class="pill pill-muted">Loading</div>
+</header>
+
+<main>
+  <!-- ======================= MAP ======================= -->
+  <section id="view-map" class="view active">
+    <div id="map"></div>
+    <div id="crosshair" class="crosshair hidden" aria-hidden="true"></div>
+    <div class="legend">
+      <span><i class="dot dot-draft"></i>Draft</span>
+      <span><i class="dot dot-complete"></i>Complete</span>
+      <span><i class="dot dot-urgent"></i>Urgent</span>
+      <span id="legendAsset" class="hidden"><i class="dot dot-asset"></i>Drawing asset</span>
+    </div>
+    <button id="btnOverlay" class="map-toggle hidden" type="button" aria-pressed="true">Drawing: on</button>
+    <div class="map-actions">
+      <button id="btnNewSurvey" class="fab" type="button">+ New survey</button>
+    </div>
+    <div id="placeBar" class="place-bar hidden">
+      <span>Move the map so the crosshair sits on the asset</span>
+      <div>
+        <button id="btnPlaceCancel" class="btn" type="button">Cancel</button>
+        <button id="btnPlaceHere" class="btn btn-primary" type="button">Place here</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= LIST ======================= -->
+  <section id="view-list" class="view">
+    <div class="filters">
+      <input id="fltSearch" type="search" placeholder="Search pit ID, surveyor, notes">
+      <div class="filter-row">
+        <select id="fltStatus"><option value="">All statuses</option><option>Draft</option><option>Complete</option></select>
+        <select id="fltUtility"><option value="">All utilities</option></select>
+        <select id="fltUrgent"><option value="">Urgent: any</option><option value="Yes">Urgent: Yes</option><option value="No">Urgent: No</option></select>
+      </div>
+    </div>
+    <div id="surveyList" class="list"></div>
+  </section>
+
+  <!-- ======================= EXPORT ======================= -->
+  <section id="view-export" class="view">
+    <div class="page">
+      <h2>End-of-day export</h2>
+      <p class="muted">Creates one zip package containing the survey records, photos and sketches, laid out so the Access database can import it directly.</p>
+      <div class="stats">
+        <div class="stat"><b id="stTotal">0</b><span>Surveys on device</span></div>
+        <div class="stat"><b id="stPending">0</b><span>Not yet exported</span></div>
+        <div class="stat"><b id="stToday">0</b><span>Surveyed today</span></div>
+      </div>
+      <fieldset class="choice">
+        <legend>Include</legend>
+        <label><input type="radio" name="scope" value="pending" checked> Surveys not yet exported</label>
+        <label><input type="radio" name="scope" value="today"> Surveys dated today</label>
+        <label><input type="radio" name="scope" value="all"> All surveys on this device</label>
+      </fieldset>
+      <p id="exportEstimate" class="muted"></p>
+      <button id="btnExport" class="btn btn-primary btn-block" type="button">Create export package</button>
+      <p id="exportResult" class="result"></p>
+      <h3>After exporting</h3>
+      <ol class="muted">
+        <li>Save or share the zip to the shared OneDrive folder.</li>
+        <li>In the Access database choose <b>Import field package</b> and select the zip.</li>
+        <li>Imported surveys appear in the Survey register with their photos.</li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ======================= SETTINGS ======================= -->
+  <section id="view-settings" class="view">
+    <div class="page">
+      <h2>Settings</h2>
+      <label class="field"><span>Default surveyor name</span><input id="setSurveyor" type="text" placeholder="e.g. A. Surveyor"></label>
+      <label class="field"><span>Device name (used in record keys and file names)</span><input id="setDevice" type="text" placeholder="e.g. TABLET01" maxlength="20"></label>
+      <h3>Storage</h3>
+      <p id="storageInfo" class="muted">Checking storage…</p>
+      <button id="btnPersist" class="btn btn-block" type="button">Ask browser to keep data permanently</button>
+      <button id="btnPurge" class="btn btn-block btn-danger" type="button">Remove exported surveys older than 14 days</button>
+      <h3>Application</h3>
+      <p class="muted">Version <span id="appVersion"></span>. Basemap: OpenStreetMap contributors via Protomaps (ODbL). Map coverage is limited to the airport area.</p>
+      <button id="btnInstall" class="btn btn-block hidden" type="button">Install on this device</button>
+      <button id="btnReload" class="btn btn-block" type="button">Check for app update</button>
+    </div>
+  </section>
+</main>
+
+<nav class="bottom-nav">
+  <button data-view="map" class="active" type="button">Map</button>
+  <button data-view="list" type="button">Surveys</button>
+  <button data-view="export" type="button">Export</button>
+  <button data-view="settings" type="button">Settings</button>
+</nav>
+
+<!-- ======================= SURVEY FORM ======================= -->
+<div id="formPanel" class="panel hidden">
+  <header class="panel-head">
+    <button id="btnFormClose" class="link" type="button">&#8249; Back</button>
+    <h2 id="formTitle">Survey</h2>
+    <span id="formStatus" class="pill"></span>
+  </header>
+  <form id="surveyForm" class="panel-body" autocomplete="off" novalidate>
+    <div class="grid2">
+      <label class="field"><span>Surveyor name *</span><input name="SurveyorName" type="text" required></label>
+      <label class="field"><span>1. Survey date *</span><input name="SurveyDate" type="date" required></label>
+    </div>
+
+    <h3>2. Utility surveyed</h3>
+    <label class="field"><span>Utility</span><select name="UtilitySurveyed" data-list="utility"></select></label>
+    <label class="field other" data-for="UtilitySurveyed"><span>Specify other</span><input name="UtilityOther" type="text"></label>
+
+    <h3>3. Manhole / Pit identification number *</h3>
+    <label class="field"><input name="ManholePitID" type="text" required placeholder="Asset ID from the drawing or cover"></label>
+
+    <h3>Asset location confirmation *</h3>
+    <p class="hint">Capture the device location while standing at the asset, or place the pin on the map. Review the coordinates and accuracy, then confirm.</p>
+    <div class="grid2">
+      <label class="field"><span>Latitude</span><input name="Latitude" type="number" step="any" inputmode="decimal"></label>
+      <label class="field"><span>Longitude</span><input name="Longitude" type="number" step="any" inputmode="decimal"></label>
+      <label class="field"><span>Accuracy radius (m)</span><input name="LocationAccuracyMeters" type="text" readonly></label>
+      <label class="field"><span>Captured at</span><input name="LocationCapturedAt" type="text" readonly></label>
+    </div>
+    <input name="LocationSource" type="hidden">
+    <div class="btn-row">
+      <button id="btnGps" class="btn btn-primary" type="button">Capture GPS</button>
+      <button id="btnPlaceOnMap" class="btn" type="button">Set on map</button>
+      <button id="btnClearLocation" class="btn btn-danger" type="button">Clear</button>
+    </div>
+    <label class="field"><span>Inspector confirms this is the asset location *</span><select name="LocationConfirmed" data-list="yesNo"></select></label>
+
+    <h3>4. Manhole / Pit photographs *</h3>
+    <p class="hint">Up to 10 photos. Camera images are resized on the device to keep the daily export small.</p>
+    <div class="btn-row">
+      <label class="btn btn-primary file-btn">Take photo<input id="inpCamera" type="file" accept="image/*" capture="environment" hidden></label>
+      <label class="btn file-btn">Add from gallery<input id="inpGallery" type="file" accept="image/*" multiple hidden></label>
+      <span id="photoCount" class="pill pill-muted">0 / 10</span>
+    </div>
+    <div id="photoGrid" class="photo-grid"></div>
+
+    <h3>Optional asset sketch</h3>
+    <div id="sketchBox" class="sketch-box"></div>
+    <div class="btn-row">
+      <button id="btnDrawSketch" class="btn btn-primary" type="button">Draw sketch</button>
+      <label class="btn file-btn">Attach file<input id="inpSketch" type="file" accept="image/*,.pdf,.svg,.dwg,.dxf" hidden></label>
+      <button id="btnRemoveSketch" class="btn btn-danger" type="button">Remove</button>
+    </div>
+
+    <h3>5. Manhole shape *</h3>
+    <label class="field"><select name="ManholeShape" data-list="shape" required></select></label>
+
+    <h3>6. Manhole cover type *</h3>
+    <label class="field"><select name="CoverType" data-list="coverType" required></select></label>
+    <label class="field other" data-for="CoverType"><span>Specify other</span><input name="CoverTypeOther" type="text"></label>
+
+    <h3>7. Structural condition ranking - manhole cover *</h3>
+    <label class="field"><select name="CoverCondition" data-list="coverCondition" required></select></label>
+
+    <h3>8. Structural condition ranking - manhole internal *</h3>
+    <label class="field"><select name="InternalCondition" data-list="internalCondition" required></select></label>
+    <label class="field other" data-for="InternalCondition"><span>Specify other</span><input name="InternalConditionOther" type="text"></label>
+
+    <h3>9. Ground conditions</h3>
+    <label class="field"><select name="GroundCondition" data-list="groundCondition"></select></label>
+    <label class="field other" data-for="GroundCondition"><span>Specify other</span><input name="GroundConditionOther" type="text"></label>
+
+    <h3>10. Description, defects or other observations *</h3>
+    <label class="field"><textarea name="Observations" rows="5" required></textarea></label>
+
+    <h3>11. Is urgent rectification required? *</h3>
+    <label class="field"><select name="UrgentRectificationRequired" data-list="yesNo" required></select></label>
+
+    <p id="formMeta" class="muted small"></p>
+  </form>
+  <footer class="panel-foot">
+    <button id="btnDelete" class="btn btn-danger" type="button">Delete</button>
+    <button id="btnSaveDraft" class="btn" type="button">Save draft</button>
+    <button id="btnComplete" class="btn btn-success" type="button">Mark complete</button>
+  </footer>
+</div>
+
+<!-- ======================= SKETCH PAD ======================= -->
+<div id="sketchPad" class="overlay hidden">
+  <header class="overlay-head">
+    <span>Sketch</span>
+    <div>
+      <button id="btnSketchUndo" class="btn" type="button">Undo</button>
+      <button id="btnSketchClear" class="btn" type="button">Clear</button>
+      <button id="btnSketchCancel" class="btn" type="button">Cancel</button>
+      <button id="btnSketchSave" class="btn btn-primary" type="button">Save</button>
+    </div>
+  </header>
+  <canvas id="sketchCanvas"></canvas>
+</div>
+
+<!-- ======================= PHOTO VIEWER ======================= -->
+<div id="photoViewer" class="overlay overlay-dark hidden">
+  <header class="overlay-head"><span id="photoViewerTitle"></span><button id="btnPhotoViewerClose" class="btn" type="button">Close</button></header>
+  <img id="photoViewerImg" alt="Survey photo">
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="vendor/maplibre-gl.js"></script>
+<script src="vendor/pmtiles.js"></script>
+<script src="vendor/jszip.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/db.js"></script>
+<script src="js/map-style.js"></script>
+<script src="js/export.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
