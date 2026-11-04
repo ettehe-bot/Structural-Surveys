@@ -1,11 +1,13 @@
 /* Service worker: precaches the whole app (code, basemap, fonts) so it runs with no signal.
    Bump CACHE_VERSION whenever any file changes; installed devices pick it up on next launch
    with a connection. */
-const CACHE_VERSION = "ss-field-v1.5.0";
+const CACHE_VERSION = "ss-field-v1.5.1";
 // Cached when present; the app works without them
 const OPTIONAL = ["./data/overlay.geojson", "./data/basemap.geojson"];
 // Utility network layers: the index lists one file per network; every listed file is cached too
 const NETWORKS_INDEX = "./data/utilities/index.json";
+// Skip the browser's HTTP cache, so a new version never saves an older copy of a file next to new ones
+const fresh = (url) => new Request(url, { cache: "reload" });
 
 async function precacheNetworks(cache) {
   try {
@@ -14,7 +16,7 @@ async function precacheNetworks(cache) {
     await cache.put(NETWORKS_INDEX, resp.clone());
     const index = await resp.json();
     const files = (index.layers || []).map((n) => "./" + String(n.file || "").replace(/^\.?\//, "")).filter((f) => f.length > 2);
-    await Promise.all(files.map((f) => cache.add(f).catch(() => null)));
+    await Promise.all(files.map((f) => cache.add(fresh(f)).catch(() => null)));
   } catch (e) { /* the app works without the networks */ }
 }
 const PRECACHE = [
@@ -45,8 +47,8 @@ for (const font of ["Noto Sans Regular", "Noto Sans Medium"]) {
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_VERSION)
-      .then((cache) => cache.addAll(PRECACHE)
-        .then(() => Promise.all(OPTIONAL.map((u) => cache.add(u).catch(() => null))))
+      .then((cache) => cache.addAll(PRECACHE.map(fresh))
+        .then(() => Promise.all(OPTIONAL.map((u) => cache.add(fresh(u)).catch(() => null))))
         .then(() => precacheNetworks(cache)))
       .then(() => self.skipWaiting())
   );
