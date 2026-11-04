@@ -133,6 +133,14 @@ main { flex: 1 1 auto; position: relative; min-height: 0; }
 .field.invalid input, .field.invalid select, .field.invalid textarea { border-color: var(--red); background: #fff5f5; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
 @media (max-width: 420px) { .grid2 { grid-template-columns: 1fr; } }
+.grid-qty { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 0 10px; }
+.wall-row { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: 8px 0; background: #fff; }
+.wall-row.invalid { border-color: var(--red); background: #fff5f5; }
+.wall-check { display: flex; align-items: center; gap: 10px; min-height: 40px; font-weight: 600; cursor: pointer; }
+.wall-check input { width: 22px; height: 22px; accent-color: var(--navy); flex: none; }
+.wall-row .sketch-box { margin-top: 4px; }
+.wall-row .btn-row { margin: 8px 0 4px; }
+.wall-row .btn-row:not(:has(> :not(.hidden))) { display: none; }
 .other { display: none; }
 .other.show { display: block; }
 

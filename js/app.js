@@ -388,13 +388,47 @@
   // ------------------------------------------------------------ form
   function populateForm() {
     for (const sel of $$("#surveyForm select[data-list]")) fillSelect(sel, C.lists[sel.dataset.list]);
-    fillSelect($("#fltUtility"), C.lists.utility, "All utilities");
+    fillSelect($("#fltUtility"), C.lists.utilityFilter, "All utilities");
     for (const sel of $$("#surveyForm select[name]")) sel.addEventListener("change", () => toggleOther(sel.name));
+    const furn = $("#furnitureFields");
+    for (const [name, label] of C.furniture) {
+      const row = document.createElement("label"); row.className = "field";
+      const cap = document.createElement("span"); cap.textContent = label;
+      const inp = document.createElement("input"); inp.name = name; inp.type = "number"; inp.min = "0"; inp.step = "1"; inp.inputMode = "numeric";
+      inp.addEventListener("focus", () => inp.select());   // typing replaces the default 0
+      row.append(cap, inp); furn.appendChild(row);
+    }
+    buildWallRows();
+    $("#surveyForm").elements.ManholeShape.addEventListener("change", shapeChanged);
   }
   function toggleOther(name) {
     const sel = $(`#surveyForm [name="${name}"]`);
     const box = $(`#surveyForm .other[data-for="${name}"]`);
     if (sel && box) box.classList.toggle("show", sel.value === "Other");
+  }
+
+  // 5a. Only the measurements that apply to the chosen shape are shown
+  function updateDimFields() {
+    const f = $("#surveyForm"), shape = f.elements.ManholeShape.value, shown = C.dimsByShape[shape] || [];
+    $("#dimFields").classList.toggle("hidden", !shape);
+    $("#dimHint").classList.toggle("hidden", !!shape);
+    for (const name of Object.keys(C.dimLabels)) f.elements[name].closest(".field").classList.toggle("hidden", !shown.includes(name));
+  }
+  function shapeChanged() {
+    const f = $("#surveyForm"), shown = C.dimsByShape[f.elements.ManholeShape.value] || [];
+    for (const name of Object.keys(C.dimLabels)) if (!shown.includes(name)) f.elements[name].value = "";
+    updateDimFields();
+  }
+
+  // A record may hold a value no longer offered (the old "Potable / Firewater"). Keep it visible so it is
+  // not lost on save; the inspector has to pick a current value before marking the survey complete.
+  function syncRetiredUtility() {
+    const sel = $("#surveyForm").elements.UtilitySurveyed, v = current.UtilitySurveyed;
+    for (const o of Array.from(sel.options)) if (o.dataset.retired) o.remove();
+    if (v && !C.lists.utility.includes(v)) {
+      const o = document.createElement("option"); o.value = v; o.textContent = `${v} (old value - choose a new one)`; o.dataset.retired = "1";
+      sel.appendChild(o);
+    }
   }
 
   async function newSurvey(loc) {
@@ -404,8 +438,11 @@
       CoverCondition: "", InternalCondition: "", InternalConditionOther: "", GroundCondition: "", GroundConditionOther: "",
       Observations: "", SketchFileName: "", SketchRelativePath: "", SketchFileType: "", SketchFileSizeBytes: "", SketchAddedAt: "",
       UrgentRectificationRequired: "", Latitude: "", Longitude: "", LocationAccuracyMeters: "", LocationCapturedAt: "", LocationSource: "",
-      LocationConfirmed: "", SurveyStatus: "Draft", CreatedAt: nowIso(), ModifiedAt: nowIso(), CompletedAt: "", DeviceName: safeDevice()
+      LocationConfirmed: "", SurveyStatus: "Draft", CreatedAt: nowIso(), ModifiedAt: nowIso(), CompletedAt: "", DeviceName: safeDevice(),
+      InternalDimLength: "", InternalDimWidth: "", InternalDimDiameter: "", InternalDimDepth: "", InternalDimUnit: "m", FurnitureOtherDetails: ""
     };
+    for (const [name] of C.furniture) current[name] = 0;
+    for (let w = 1; w <= C.wallCount; w++) current[`DuctWall${w}`] = false;
     if (loc) Object.assign(current, loc);
     currentFiles = []; currentIsNew = true;
     openForm();
@@ -421,18 +458,21 @@
 
   function openForm() {
     const f = $("#surveyForm");
+    syncRetiredUtility();
     for (const el of f.elements) {
       if (!el.name) continue;
+      if (el.type === "checkbox") { el.checked = current[el.name] === true; continue; }
       el.value = current[el.name] === undefined || current[el.name] === null ? "" : current[el.name];
     }
     if (current.LocationCapturedAt) f.elements.LocationCapturedAt.value = EX.fmt(current.LocationCapturedAt);
     for (const name of ["UtilitySurveyed", "CoverType", "InternalCondition", "GroundCondition"]) toggleOther(name);
-    $$("#surveyForm .field.invalid").forEach((x) => x.classList.remove("invalid"));
+    updateDimFields();
+    $$("#surveyForm .invalid").forEach((x) => x.classList.remove("invalid"));
     $("#formTitle").textContent = current.ManholePitID ? current.ManholePitID : (currentIsNew ? "New survey" : "Survey");
     setStatusPill();
     $("#btnDelete").classList.toggle("hidden", currentIsNew);
     $("#formMeta").textContent = `Record key ${current.RecordKey}` + (current._exportedAt ? ` · exported ${EX.fmt(current._exportedAt)}` : "");
-    renderPhotos(); renderSketch();
+    renderPhotos(); renderSketch(); renderWalls();
     $("#formPanel").classList.remove("hidden");
     $(".panel-body").scrollTop = 0;
   }
@@ -445,18 +485,19 @@
     const f = $("#surveyForm");
     for (const el of f.elements) {
       if (!el.name) continue;
+      if (el.type === "checkbox") { current[el.name] = el.checked; continue; }
       let v = el.value;
       if (typeof v === "string") v = v.trim();
       current[el.name] = v;
     }
-    for (const k of ["Latitude", "Longitude", "LocationAccuracyMeters"]) current[k] = isNum(current[k]) ? Number(current[k]) : "";
+    for (const k of ["Latitude", "Longitude", "LocationAccuracyMeters", ...Object.keys(C.dimLabels), ...C.furniture.map(([name]) => name)]) current[k] = isNum(current[k]) ? Number(current[k]) : "";
     if (isNum(current.Latitude) && isNum(current.Longitude) && !current.LocationSource) current.LocationSource = "Manual entry (field app)";
     if (!isNum(current.Latitude) || !isNum(current.Longitude)) { current.Latitude = ""; current.Longitude = ""; }
   }
 
   async function closeForm() {
     if (currentIsNew && currentFiles.length) {
-      if (!confirm("Discard this new survey and its photos?")) return;
+      if (!confirm("Discard this new survey, its photos and sketches?")) return;
       await DB.deleteFilesFor(current.RecordKey);
     }
     $("#formPanel").classList.add("hidden");
@@ -466,9 +507,19 @@
 
   function validateComplete() {
     const problems = [];
-    $$("#surveyForm .field.invalid").forEach((x) => x.classList.remove("invalid"));
-    const flag = (name) => { const el = $(`#surveyForm [name="${name}"]`); if (el) el.closest(".field").classList.add("invalid"); };
+    $$("#surveyForm .invalid").forEach((x) => x.classList.remove("invalid"));
+    const flag = (name) => { const el = $(`#surveyForm [name="${name}"]`); if (el) el.closest(".field, .wall-row").classList.add("invalid"); };
     for (const [key, label] of C.requiredForComplete) if (!current[key]) { problems.push(label); flag(key); }
+    if (current.UtilitySurveyed && !C.lists.utility.includes(current.UtilitySurveyed)) { problems.push("Utility surveyed (choose Potable Water or Fire Water)"); flag("UtilitySurveyed"); }
+    for (const name of C.dimsByShape[current.ManholeShape] || []) if (!(Number(current[name]) > 0)) { problems.push(`${C.dimLabels[name]} above zero`); flag(name); }
+    if (!C.lists.dimUnit.includes(current.InternalDimUnit)) { problems.push("Dimension unit"); flag("InternalDimUnit"); }
+    for (const [name, label] of C.furniture) if (current[name] !== "" && (!Number.isInteger(current[name]) || current[name] < 0)) { problems.push(`${label} as a whole number`); flag(name); }
+    if (current.FurnitureOther > 0 && !current.FurnitureOtherDetails) { problems.push("Description of other pit furniture"); flag("FurnitureOtherDetails"); }
+    for (let w = 1; w <= C.wallCount; w++) {
+      const ticked = current[`DuctWall${w}`], has = !!wallSketch(w);
+      if (ticked && !has) { problems.push(`Wall ${w} sketch`); flag(`DuctWall${w}`); }
+      if (!ticked && has) { problems.push(`Wall ${w} has a sketch but is not ticked (tick it or remove the sketch)`); flag(`DuctWall${w}`); }
+    }
     for (const [sel, other, label] of [["UtilitySurveyed", "UtilityOther", "Utility (other)"], ["CoverType", "CoverTypeOther", "Cover type (other)"], ["InternalCondition", "InternalConditionOther", "Internal condition (other)"], ["GroundCondition", "GroundConditionOther", "Ground condition (other)"]]) {
       if (current[sel] === "Other" && !current[other]) { problems.push(label); flag(other); }
     }
@@ -632,8 +683,104 @@
     const t = document.createElement("span"); t.textContent = `${sk.FileName} · ${Math.round(sk.blob.size / 1024)} KB`; box.appendChild(t);
   }
 
+  // Images are resized like photos; other drawing files are kept as they are. Returns null if the file is refused.
+  async function prepareSketchFile(file) {
+    const ext = (file.name.split(".").pop() || "").toLowerCase();
+    const isRaster = ext !== "svg" && (/^(jpg|jpeg|png|webp|bmp|gif|heic|heif)$/.test(ext) || (file.type || "").startsWith("image/"));
+    const out = isRaster ? await processImage(file) : { blob: file, ext };
+    if (!C.sketchTypes.includes(out.ext)) { toast("Choose an image, PDF, SVG, DWG or DXF file", true); return null; }
+    if (out.blob.size > C.maxFileBytes) { toast("Sketch is larger than 10 MB", true); return null; }
+    return { blob: out.blob, ext: out.ext, name: out.ext === ext ? file.name : file.name.replace(/\.[^.]+$/, "") + "." + out.ext };
+  }
+
+  // ------------------------------------------------------------ 6b. duct wall sketches
+  const wallSketch = (w) => currentFiles.find((f) => f.category === "DuctWall" && f.number === w);
+
+  function buildWallRows() {
+    const box = $("#wallList"), accept = "image/*," + C.sketchTypes.map((x) => "." + x).join(",");
+    for (let w = 1; w <= C.wallCount; w++) {
+      const row = document.createElement("div"); row.className = "wall-row"; row.dataset.wall = w;
+      row.innerHTML = `<label class="wall-check"><input type="checkbox" name="DuctWall${w}"><span>Wall ${w}</span></label>
+        <div class="sketch-box"></div>
+        <div class="btn-row">
+          <button class="btn btn-primary" type="button" data-act="draw">Draw sketch</button>
+          <label class="btn file-btn" data-act="attach">Attach file<input type="file" accept="${accept}" hidden></label>
+          <button class="btn" type="button" data-act="open">Open</button>
+          <button class="btn btn-danger" type="button" data-act="remove">Remove</button>
+        </div>`;
+      row.querySelector('input[type="checkbox"]').addEventListener("change", (e) => {
+        if (e.target.checked && !wallSketch(w)) toast(`Add a sketch of Wall ${w} (required to mark complete)`);
+        else if (!e.target.checked && wallSketch(w)) toast(`A sketch is still attached to Wall ${w}. Use Remove if this wall no longer applies.`);
+        renderWalls();
+      });
+      row.querySelector('[data-act="draw"]').addEventListener("click", () => { pad.wall = w; $("#sketchPadTitle").textContent = `Wall ${w} sketch`; openSketchPad(); });
+      row.querySelector('input[type="file"]').addEventListener("change", async (e) => {
+        const file = e.target.files && e.target.files[0]; e.target.value = "";
+        if (!file) return;
+        const out = await prepareSketchFile(file);
+        if (out) { await setWallSketch(w, out.blob, out.name, out.ext); toast(`Wall ${w} sketch attached`); }
+      });
+      row.querySelector('[data-act="open"]').addEventListener("click", () => openWallSketch(w));
+      row.querySelector('[data-act="remove"]').addEventListener("click", async () => { if (confirm(`Remove the Wall ${w} sketch?`)) await removeWallSketch(w); });
+      box.appendChild(row);
+    }
+  }
+
+  function renderWalls() {
+    const f = $("#surveyForm");
+    for (const row of $$("#wallList .wall-row")) {
+      const w = Number(row.dataset.wall), ticked = f.elements[`DuctWall${w}`].checked, sk = wallSketch(w);
+      row.classList.toggle("ticked", ticked);
+      for (const act of ["draw", "attach"]) row.querySelector(`[data-act="${act}"]`).classList.toggle("hidden", !ticked);
+      for (const act of ["open", "remove"]) row.querySelector(`[data-act="${act}"]`).classList.toggle("hidden", !sk);
+      const box = row.querySelector(".sketch-box"); box.innerHTML = "";
+      box.classList.toggle("hidden", !ticked && !sk);
+      if (!sk) { box.textContent = "Sketch required. Draw one on screen or attach an image, PDF, SVG, DWG or DXF file (max 10 MB)."; continue; }
+      if (/^(png|jpg|jpeg|gif|webp|svg|bmp)$/.test(sk.FileType)) { const img = document.createElement("img"); img.src = objUrl(sk.blob); box.appendChild(img); }
+      const t = document.createElement("span"); t.textContent = `${sk.FileName} · ${Math.round(sk.blob.size / 1024)} KB`; box.appendChild(t);
+    }
+  }
+
+  async function setWallSketch(w, blob, name, ext) {
+    const old = wallSketch(w);
+    if (old) { await DB.deleteFile(old.fileId); currentFiles = currentFiles.filter((f) => f !== old); }
+    const FileName = cleanFileName(name);
+    const rec = { RecordKey: current.RecordKey, category: "DuctWall", number: w, FileName,
+      RelativePath: `SurveyFiles\\${cleanFileName(current.RecordKey)}\\DuctWall${w}_${stamp()}_${FileName.slice(-40)}`,   // short: keeps Windows paths under 260 characters
+      FileType: ext, blob, capturedAt: nowIso(), caption: `Wall ${w}` };
+    rec.fileId = await DB.putFile(rec);
+    currentFiles.push(rec);
+    await wallSketchChanged();
+  }
+  async function removeWallSketch(w) {
+    const old = wallSketch(w);
+    if (old) { await DB.deleteFile(old.fileId); currentFiles = currentFiles.filter((f) => f !== old); }
+    await wallSketchChanged();
+  }
+  // Same rule as Access: a changed wall sketch is saved at once and reopens a completed survey as a draft.
+  async function wallSketchChanged() {
+    renderWalls();
+    if (currentIsNew) return;
+    readForm();
+    if (current.SurveyStatus === "Complete") { current.SurveyStatus = "Draft"; current.CompletedAt = ""; setStatusPill(); toast("Survey returned to draft: mark it complete again when finished"); }
+    current.ModifiedAt = nowIso();
+    if (current._exportedAt) current._exportedAt = "";     // changed after export: needs exporting again
+    await DB.putSurvey(current);
+    await refreshSurveys();
+  }
+  function openWallSketch(w) {
+    const sk = wallSketch(w);
+    if (!sk) return;
+    if (/^(png|jpg|jpeg|gif|webp|svg|bmp)$/.test(sk.FileType)) {
+      $("#photoViewerImg").src = objUrl(sk.blob); $("#photoViewerTitle").textContent = `Wall ${w} sketch`; $("#photoViewer").classList.remove("hidden");
+      return;
+    }
+    const a = document.createElement("a"); a.href = objUrl(sk.blob); a.download = sk.FileName;   // PDF and CAD files open in the device's own apps
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
   // simple drawing pad
-  const pad = { strokes: [], cur: null, ctx: null };
+  const pad = { strokes: [], cur: null, ctx: null, wall: 0 };   // wall: 0 = general asset sketch, 1-4 = duct wall
   function openSketchPad() {
     const ov = $("#sketchPad"); ov.classList.remove("hidden");
     const cv = $("#sketchCanvas");
@@ -665,7 +812,8 @@
     $("#btnSketchSave").addEventListener("click", async () => {
       if (!pad.strokes.length) { toast("Nothing drawn yet", true); return; }
       const blob = await new Promise((res) => cv.toBlob(res, "image/png"));
-      await setSketch(blob, `${assetBase()}_drawing.png`, "png");
+      if (pad.wall) await setWallSketch(pad.wall, blob, `${assetBase()}_Wall${pad.wall}.png`, "png");
+      else await setSketch(blob, `${assetBase()}_drawing.png`, "png");
       $("#sketchPad").classList.add("hidden"); toast("Sketch attached");
     });
     window.addEventListener("resize", () => { if (!$("#sketchPad").classList.contains("hidden")) { const strokes = pad.strokes; openSketchPad(); pad.strokes = strokes; redrawPad(); } });
@@ -781,14 +929,12 @@
     $("#inpSketch").addEventListener("change", async (e) => {
       const file = e.target.files && e.target.files[0]; e.target.value = "";
       if (!file) return;
-      if (file.size > C.maxFileBytes) { toast("Sketch is larger than 10 MB", true); return; }
-      const ext = (file.name.split(".").pop() || "").toLowerCase();
-      let blob = file, outExt = ext;
-      if (/^(jpg|jpeg|png|webp|bmp|gif|heic|heif)$/.test(ext)) { const o = await processImage(file); blob = o.blob; outExt = o.ext; }
-      await setSketch(blob, outExt === ext ? file.name : file.name.replace(/\.[^.]+$/, "") + "." + outExt, outExt);
+      const out = await prepareSketchFile(file);
+      if (!out) return;
+      await setSketch(out.blob, out.name, out.ext);
       toast("Sketch attached");
     });
-    $("#btnDrawSketch").addEventListener("click", openSketchPad);
+    $("#btnDrawSketch").addEventListener("click", () => { pad.wall = 0; $("#sketchPadTitle").textContent = "Sketch"; openSketchPad(); });
     $("#btnRemoveSketch").addEventListener("click", async () => { if (currentFiles.some((f) => f.category === "Sketch") && confirm("Remove the sketch?")) { await removeSketch(); } });
     bindSketchPad();
     $("#btnPhotoViewerClose").addEventListener("click", () => $("#photoViewer").classList.add("hidden"));

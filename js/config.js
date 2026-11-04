@@ -3,7 +3,7 @@
    so that exported rows can be appended without any mapping. */
 window.SURVEY_CONFIG = {
   appName: "Structural Survey",
-  version: "1.4.1",
+  version: "1.5.0",
 
   // Offline basemap coverage: Abu Dhabi International (Zayed International) Airport
   bbox: [54.56, 24.37, 54.76, 24.51],          // [minLon, minLat, maxLon, maxLat]
@@ -19,8 +19,11 @@ window.SURVEY_CONFIG = {
 
   // Value lists (identical to the Access combo boxes)
   lists: {
-    utility: ["AGL", "Potable / Firewater", "ICT / comms", "Storm Water", "LV", "HV", "Sewage", "Other"],
+    utility: ["AGL", "Potable Water", "Fire Water", "ICT / comms", "Storm Water", "LV", "HV", "Sewage", "Fuel Hydrant", "Chilled Water", "400Hz", "Other"],
+    // Survey list filter only: the old combined value stays searchable but is not offered for new surveys
+    utilityFilter: ["AGL", "Potable Water", "Fire Water", "ICT / comms", "Storm Water", "LV", "HV", "Sewage", "Fuel Hydrant", "Chilled Water", "400Hz", "Other", "Potable / Firewater"],
     shape: ["Square", "Circle", "Rectangle"],
+    dimUnit: ["m", "mm"],
     coverType: ["F900", "D400", "Other"],
     coverCondition: ["Good", "Fair", "Poor", "Not serviceable"],
     internalCondition: ["Good", "Fair", "Poor", "Not serviceable", "Other"],
@@ -35,6 +38,25 @@ window.SURVEY_CONFIG = {
   photoMaxEdge: 2048,           // downscale camera images to keep the daily export small
   photoQuality: 0.85,
 
+  // 5a. Internal dimensions required for each manhole shape
+  dimsByShape: {
+    Square: ["InternalDimLength", "InternalDimDepth"],
+    Circle: ["InternalDimDiameter", "InternalDimDepth"],
+    Rectangle: ["InternalDimLength", "InternalDimWidth", "InternalDimDepth"]
+  },
+  dimLabels: { InternalDimLength: "Length", InternalDimWidth: "Width", InternalDimDiameter: "Diameter", InternalDimDepth: "Depth" },
+
+  // 6a. Pit furniture quantities
+  furniture: [
+    ["FurnitureTransformers", "Transformers"], ["FurnitureAGLRemotes", "AGL Remotes"], ["FurnitureGroundingBar", "Grounding Bar"],
+    ["FurnitureCounterpoise", "Counterpoise"], ["FurnitureGroundingRod", "Grounding Rod"], ["FurnitureCableTrays", "Cable Trays"],
+    ["FurnitureDrainageSump", "Drainage Sump"], ["FurnitureLadder", "Ladder"], ["FurnitureOther", "Other"]
+  ],
+
+  // 6b. Duct wall sketches (same file types as the Access form)
+  wallCount: 4,
+  sketchTypes: ["jpg", "jpeg", "png", "bmp", "gif", "tif", "tiff", "heic", "heif", "webp", "avif", "pdf", "svg", "dwg", "dxf"],
+
   // Column order of surveys.csv - every tblSurveys column except the AutoNumber SurveyID
   surveyColumns: [
     "RecordKey", "SurveyorName", "SurveyDate", "UtilitySurveyed", "UtilityOther",
@@ -43,7 +65,11 @@ window.SURVEY_CONFIG = {
     "Observations", "SketchFileName", "SketchRelativePath", "SketchFileType",
     "SketchFileSizeBytes", "SketchAddedAt", "UrgentRectificationRequired", "Latitude",
     "Longitude", "LocationAccuracyMeters", "LocationCapturedAt", "LocationSource",
-    "LocationConfirmed", "SurveyStatus", "CreatedAt", "ModifiedAt", "CompletedAt", "DeviceName"
+    "LocationConfirmed", "SurveyStatus", "CreatedAt", "ModifiedAt", "CompletedAt", "DeviceName",
+    "InternalDimLength", "InternalDimWidth", "InternalDimDiameter", "InternalDimDepth", "InternalDimUnit",
+    "FurnitureTransformers", "FurnitureAGLRemotes", "FurnitureGroundingBar", "FurnitureCounterpoise", "FurnitureGroundingRod",
+    "FurnitureCableTrays", "FurnitureDrainageSump", "FurnitureLadder", "FurnitureOther", "FurnitureOtherDetails",
+    "DuctWall1", "DuctWall2", "DuctWall3", "DuctWall4"
   ],
 
   // Column order of photos.csv - tblSurveyPhotos columns keyed by RecordKey instead of SurveyID
@@ -52,10 +78,14 @@ window.SURVEY_CONFIG = {
     "FileSizeBytes", "CapturedAt", "FileCaption"
   ],
 
+  // Column order of ductwalls.csv - tblDuctWallSketches columns keyed by RecordKey instead of SurveyID
+  ductWallColumns: ["RecordKey", "WallNo", "FileName", "RelativePath", "FileType", "FileSizeBytes", "AddedAt"],
+
   // Fields that must be filled before a survey can be marked Complete
   requiredForComplete: [
     ["SurveyorName", "Surveyor name"],
     ["SurveyDate", "Survey date"],
+    ["UtilitySurveyed", "Utility surveyed"],
     ["ManholePitID", "Manhole / Pit ID"],
     ["LocationConfirmed", "Location confirmation"],
     ["ManholeShape", "Manhole shape"],

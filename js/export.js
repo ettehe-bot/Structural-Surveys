@@ -2,10 +2,11 @@
    Produces a zip with:
      surveys.csv   - one row per survey, tblSurveys columns (no SurveyID)
      photos.csv    - one row per photo, keyed by RecordKey
+     ductwalls.csv - one row per duct wall sketch, keyed by RecordKey
      manifest.json - device, counts, app version
      SurveyFiles/<RecordKey>/<stored file>  - photos and sketches
    The layout matches the SurveyFiles convention of the Access application, so the
-   VBA import routine only has to copy the folder and append the two CSV files. */
+   VBA import routine only has to copy the folder and append the CSV files. */
 window.SurveyExport = (function () {
   const C = window.SURVEY_CONFIG;
 
@@ -38,6 +39,7 @@ window.SurveyExport = (function () {
     const zip = new JSZip();
     const surveyRows = [];
     const photoRows = [];
+    const wallRows = [];
 
     for (const s of surveys) {
       const row = {};
@@ -45,6 +47,7 @@ window.SurveyExport = (function () {
       for (const dc of ["SurveyDate", "SketchAddedAt", "LocationCapturedAt", "CreatedAt", "ModifiedAt", "CompletedAt"]) {
         row[dc] = dc === "SurveyDate" && s[dc] ? String(s[dc]).slice(0, 10) : fmt(s[dc]);
       }
+      for (let w = 1; w <= C.wallCount; w++) row[`DuctWall${w}`] = s[`DuctWall${w}`] === true ? "Yes" : "No";
       surveyRows.push(row);
 
       const files = filesBySurvey[s.RecordKey] || [];
@@ -61,17 +64,28 @@ window.SurveyExport = (function () {
             CapturedAt: fmt(f.capturedAt),
             FileCaption: f.caption || ""
           });
+        } else if (f.category === "DuctWall") {
+          wallRows.push({
+            RecordKey: s.RecordKey,
+            WallNo: f.number,
+            FileName: f.FileName,
+            RelativePath: f.RelativePath,
+            FileType: f.FileType,
+            FileSizeBytes: f.blob.size,
+            AddedAt: fmt(f.capturedAt)
+          });
         }
       }
     }
 
     zip.file("surveys.csv", toCsv(C.surveyColumns, surveyRows));
     zip.file("photos.csv", toCsv(C.photoColumns, photoRows));
+    zip.file("ductwalls.csv", toCsv(C.ductWallColumns, wallRows));
     zip.file("manifest.json", JSON.stringify({
       app: C.appName, version: C.version, device: deviceName,
       exportedAt: new Date().toISOString(),
-      surveys: surveyRows.length, photos: photoRows.length,
-      format: "structural-survey-field-package/1"
+      surveys: surveyRows.length, photos: photoRows.length, ductWallSketches: wallRows.length,
+      format: "structural-survey-field-package/2"
     }, null, 2));
 
     // Photos are already JPEG - storing them uncompressed is faster on a phone

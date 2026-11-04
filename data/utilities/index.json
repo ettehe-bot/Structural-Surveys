@@ -1,5 +1,5 @@
 {
-    "generated":  "2026-11-03 10:47",
+    "generated":  "2026-11-04 14:45",
     "layers":  [
                    {
                        "id":  "agl",
@@ -32,8 +32,7 @@
                        "lines":  376,
                        "sizeKB":  62,
                        "source":  "C-UP-Chilled water.dwg",
-                       "utility":  "Other",
-                       "utilityOther":  "Chilled water"
+                       "utility":  "Chilled Water"
                    },
                    {
                        "id":  "comms",
@@ -55,7 +54,7 @@
                        "lines":  1400,
                        "sizeKB":  306,
                        "source":  "Fire Hydrants_June 2016.dwg",
-                       "utility":  "Potable / Firewater"
+                       "utility":  "Fire Water"
                    },
                    {
                        "id":  "fire-water",
@@ -66,7 +65,7 @@
                        "lines":  6337,
                        "sizeKB":  989,
                        "source":  "Fire Water Line.dwg",
-                       "utility":  "Potable / Firewater"
+                       "utility":  "Fire Water"
                    },
                    {
                        "id":  "fuel",
@@ -77,8 +76,7 @@
                        "lines":  1872,
                        "sizeKB":  326,
                        "source":  "Fuel Pipe Line_Sep 2024.dwg",
-                       "utility":  "Other",
-                       "utilityOther":  "Fuel"
+                       "utility":  "Fuel Hydrant"
                    },
                    {
                        "id":  "irrigation",
@@ -112,7 +110,7 @@
                        "lines":  1135,
                        "sizeKB":  507,
                        "source":  "Potable Water.dwg",
-                       "utility":  "Potable / Firewater"
+                       "utility":  "Potable Water"
                    },
                    {
                        "id":  "power",
