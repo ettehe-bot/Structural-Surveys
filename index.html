@@ -142,7 +142,7 @@
       <label class="field"><span>1. Survey date *</span><input name="SurveyDate" type="date" required></label>
     </div>
 
-    <h3>2. Utility surveyed</h3>
+    <h3>2. Utility surveyed *</h3>
     <label class="field"><span>Utility</span><select name="UtilitySurveyed" data-list="utility"></select></label>
     <label class="field other" data-for="UtilitySurveyed"><span>Specify other</span><input name="UtilityOther" type="text"></label>
 
@@ -185,9 +185,28 @@
     <h3>5. Manhole shape *</h3>
     <label class="field"><select name="ManholeShape" data-list="shape" required></select></label>
 
+    <h3>5a. Internal dimensions *</h3>
+    <p id="dimHint" class="hint">Choose the shape first. Only the applicable measurements are shown.</p>
+    <div id="dimFields" class="grid-qty">
+      <label class="field"><span>Length</span><input name="InternalDimLength" type="number" min="0" step="any" inputmode="decimal"></label>
+      <label class="field"><span>Width</span><input name="InternalDimWidth" type="number" min="0" step="any" inputmode="decimal"></label>
+      <label class="field"><span>Diameter</span><input name="InternalDimDiameter" type="number" min="0" step="any" inputmode="decimal"></label>
+      <label class="field"><span>Depth</span><input name="InternalDimDepth" type="number" min="0" step="any" inputmode="decimal"></label>
+      <label class="field"><span>Unit</span><select name="InternalDimUnit" data-list="dimUnit"></select></label>
+    </div>
+
     <h3>6. Manhole cover type *</h3>
     <label class="field"><select name="CoverType" data-list="coverType" required></select></label>
     <label class="field other" data-for="CoverType"><span>Specify other</span><input name="CoverTypeOther" type="text"></label>
+
+    <h3>6a. Pit furniture - number present</h3>
+    <p class="hint">Enter a whole number for each item. Use 0 when none are present.</p>
+    <div id="furnitureFields" class="grid-qty"></div>
+    <label class="field"><span>Other - describe item(s), if quantity is greater than 0</span><input name="FurnitureOtherDetails" type="text" maxlength="255"></label>
+
+    <h3>6b. Duct arrangement - mark applicable walls</h3>
+    <p class="hint">Tick a wall to add its sketch. Each ticked wall needs its own sketch before the survey can be marked complete. Drafts can be saved without them.</p>
+    <div id="wallList"></div>
 
     <h3>7. Structural condition ranking - manhole cover *</h3>
     <label class="field"><select name="CoverCondition" data-list="coverCondition" required></select></label>
@@ -200,7 +219,7 @@
     <label class="field"><select name="GroundCondition" data-list="groundCondition"></select></label>
     <label class="field other" data-for="GroundCondition"><span>Specify other</span><input name="GroundConditionOther" type="text"></label>
 
-    <h3>10. Description, defects or other observations *</h3>
+    <h3>10. Defects or other observations *</h3>
     <label class="field"><textarea name="Observations" rows="5" required></textarea></label>
 
     <h3>11. Is urgent rectification required? *</h3>
@@ -218,7 +237,7 @@
 <!-- ======================= SKETCH PAD ======================= -->
 <div id="sketchPad" class="overlay hidden">
   <header class="overlay-head">
-    <span>Sketch</span>
+    <span id="sketchPadTitle">Sketch</span>
     <div>
       <button id="btnSketchUndo" class="btn" type="button">Undo</button>
       <button id="btnSketchClear" class="btn" type="button">Clear</button>
