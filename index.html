@@ -101,6 +101,18 @@
         <li>In the Access database choose <b>Import field package</b> and select the zip.</li>
         <li>Imported surveys appear in the Survey register with their photos.</li>
       </ol>
+
+      <h2 class="section-gap">Surveyors package</h2>
+      <p class="muted">For checking the surveyed manholes against the drawings. Creates a zip with a CAD file (DXF) and a CSV. Each manhole is a point at its surveyed location, labelled with its ID, on a layer for its utility, with its dimensions in the point's properties.</p>
+      <fieldset class="choice">
+        <legend>Include</legend>
+        <label><input type="radio" name="pkgScope" value="all" checked> All surveys on this device</label>
+        <label><input type="radio" name="pkgScope" value="today"> Surveys dated today</label>
+        <label class="choice-sep"><input id="pkgCompleteOnly" type="checkbox"> Completed surveys only</label>
+      </fieldset>
+      <p id="pkgEstimate" class="muted"></p>
+      <button id="btnSurveyorPackage" class="btn btn-primary btn-block" type="button">Create surveyors package</button>
+      <p id="pkgResult" class="result"></p>
     </div>
   </section>
 
@@ -204,8 +216,27 @@
     <div id="furnitureFields" class="grid-qty"></div>
     <label class="field"><span>Other - describe item(s), if quantity is greater than 0</span><input name="FurnitureOtherDetails" type="text" maxlength="255"></label>
 
-    <h3>6b. Duct arrangement - mark applicable walls</h3>
-    <p class="hint">Tick a wall to add its sketch. Each ticked wall needs its own sketch before the survey can be marked complete. Drafts can be saved without them.</p>
+    <div class="legend-anchor">
+      <h3>6b. Duct arrangement - mark applicable <span class="nowrap">walls<button id="btnWallLegend" class="legend-tip" type="button" aria-label="Show the wall numbering legend" aria-expanded="false" aria-controls="wallLegend"><sup>+</sup></button></span></h3>
+      <div id="wallLegend" class="legend-pop">
+        <svg viewBox="50 20 1040 470" role="img" aria-label="Legend. Wall 1 is at the top, wall 2 on the right, wall 3 at the bottom and wall 4 on the left. An arrow from wall 4 points towards the runway, taxiway, road or shoulder.">
+          <g fill="#000" font-family="Arial, Helvetica, sans-serif">
+            <text x="386" y="66" font-size="40" font-weight="700" text-anchor="middle" text-decoration="underline">Legend:</text>
+            <text x="400" y="243" font-size="46" text-anchor="middle">Runway/taxiway/road/shoulder</text>
+            <g font-size="44" text-anchor="middle">
+              <text x="878" y="132">1</text>
+              <text x="1058" y="301">2</text>
+              <text x="878" y="472">3</text>
+              <text x="690" y="301">4</text>
+            </g>
+            <path d="M415 285 462 271V279H645V291H462V299Z"/>
+          </g>
+          <rect x="736" y="157" width="275" height="256" fill="none" stroke="#000" stroke-width="2"/>
+          <rect x="72" y="185" width="655" height="82" fill="none" stroke="#e96a6a" stroke-width="4"/>
+        </svg>
+      </div>
+    </div>
+    <p class="hint">Tick each wall that has ducts, then tick its top, middle or bottom group. Choose the duct size and arrangement and the sketch draws itself. Example: ø50 mm, 3x3 is 2 rows of 3, so 6 ducts.</p>
     <div id="wallList"></div>
 
     <h3>7. Structural condition ranking - manhole cover *</h3>
@@ -237,7 +268,7 @@
 <!-- ======================= SKETCH PAD ======================= -->
 <div id="sketchPad" class="overlay hidden">
   <header class="overlay-head">
-    <span id="sketchPadTitle">Sketch</span>
+    <span>Sketch</span>
     <div>
       <button id="btnSketchUndo" class="btn" type="button">Undo</button>
       <button id="btnSketchClear" class="btn" type="button">Clear</button>
@@ -263,6 +294,7 @@
 <script src="js/db.js"></script>
 <script src="js/map-style.js"></script>
 <script src="js/export.js"></script>
+<script src="js/surveyor-package.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

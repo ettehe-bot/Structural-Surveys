@@ -3,7 +3,7 @@
    so that exported rows can be appended without any mapping. */
 window.SURVEY_CONFIG = {
   appName: "Structural Survey",
-  version: "1.5.1",
+  version: "1.8.0",
 
   // Offline basemap coverage: Abu Dhabi International (Zayed International) Airport
   bbox: [54.56, 24.37, 54.76, 24.51],          // [minLon, minLat, maxLon, maxLat]
@@ -53,9 +53,26 @@ window.SURVEY_CONFIG = {
     ["FurnitureDrainageSump", "Drainage Sump"], ["FurnitureLadder", "Ladder"], ["FurnitureOther", "Other"]
   ],
 
-  // 6b. Duct wall sketches (same file types as the Access form)
+  // 6b. Duct arrangement: groups of ducts on each wall
   wallCount: 4,
+  ductPositions: ["Top", "Middle", "Bottom"],
+  ductSizes: [25, 50, 75, 100, 125, 150, 175, 200, 225, 250, 275, 300],   // mm
+  maxDuctRows: 8,
+  maxDuctsPerRow: 12,
+
+  // File types accepted for the optional asset sketch (same as the Access form)
   sketchTypes: ["jpg", "jpeg", "png", "bmp", "gif", "tif", "tiff", "heic", "heif", "webp", "avif", "pdf", "svg", "dwg", "dxf"],
+
+  // Surveyors package: CAD symbol sizes in metres, and AutoCAD colour numbers for each utility layer
+  surveyorPackage: {
+    utmZone: 40,
+    textHeight: 1.0,
+    symbolRadius: 0.5,
+    layerColors: {
+      "AGL": 30, "Potable Water": 5, "Fire Water": 1, "ICT / comms": 6, "Storm Water": 3, "LV": 2, "HV": 210, "Sewage": 32,
+      "Fuel Hydrant": 40, "Chilled Water": 4, "400Hz": 150, "Other": 8, "Potable / Firewater": 140, "Unspecified": 9
+    }
+  },
 
   // Column order of surveys.csv - every tblSurveys column except the AutoNumber SurveyID
   surveyColumns: [
@@ -80,6 +97,10 @@ window.SURVEY_CONFIG = {
 
   // Column order of ductwalls.csv - tblDuctWallSketches columns keyed by RecordKey instead of SurveyID
   ductWallColumns: ["RecordKey", "WallNo", "FileName", "RelativePath", "FileType", "FileSizeBytes", "AddedAt"],
+
+  // Column order of ductsections.csv and ductconduits.csv - tblDuctSections and tblDuctConduits, keyed by RecordKey
+  ductSectionColumns: ["RecordKey", "WallNo", "SectionName", "DuctSizeMm", "DuctRows", "DuctsPerRow", "CableDiameterMm"],
+  ductConduitColumns: ["RecordKey", "WallNo", "SectionName", "RowNo", "DuctNo", "CableCount"],
 
   // Fields that must be filled before a survey can be marked Complete
   requiredForComplete: [

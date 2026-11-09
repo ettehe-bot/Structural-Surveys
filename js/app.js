@@ -4,6 +4,7 @@
   const C = window.SURVEY_CONFIG;
   const DB = window.SurveyDB;
   const EX = window.SurveyExport;
+  const SP = window.SurveyorPackage;
   const $ = (sel, root) => (root || document).querySelector(sel);
   const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
 
@@ -443,6 +444,7 @@
     };
     for (const [name] of C.furniture) current[name] = 0;
     for (let w = 1; w <= C.wallCount; w++) current[`DuctWall${w}`] = false;
+    current.DuctSections = {};
     if (loc) Object.assign(current, loc);
     currentFiles = []; currentIsNew = true;
     openForm();
@@ -517,8 +519,17 @@
     if (current.FurnitureOther > 0 && !current.FurnitureOtherDetails) { problems.push("Description of other pit furniture"); flag("FurnitureOtherDetails"); }
     for (let w = 1; w <= C.wallCount; w++) {
       const ticked = current[`DuctWall${w}`], has = !!wallSketch(w);
-      if (ticked && !has) { problems.push(`Wall ${w} sketch`); flag(`DuctWall${w}`); }
-      if (!ticked && has) { problems.push(`Wall ${w} has a sketch but is not ticked (tick it or remove the sketch)`); flag(`DuctWall${w}`); }
+      if (!ticked && has) { problems.push(`Wall ${w} has an attached sketch but is not ticked (tick it or remove the sketch)`); flag(`DuctWall${w}`); }
+      if (!ticked) continue;
+      const on = C.ductPositions.filter((pos) => ductSection(w, pos).on);
+      if (!on.length && !has) { problems.push(`Wall ${w}: tick the top, middle or bottom ducts`); flag(`DuctWall${w}`); }
+      for (const pos of on) {
+        const sec = ductSection(w, pos), box = $(`#wallList .wall-row[data-wall="${w}"] .duct-section[data-pos="${pos}"]`);
+        if (!(sec.size && sec.rows && sec.perRow)) { problems.push(`Wall ${w} ${pos.toLowerCase()}: duct size and arrangement`); box.classList.add("invalid"); continue; }
+        if (sec.cableDia !== undefined && sec.cableDia !== "" && !(sec.cableDia > 0)) { problems.push(`Wall ${w} ${pos.toLowerCase()}: cable diameter above zero`); box.classList.add("invalid"); }
+        const bad = EX.ductCells(sec).some(({ key }) => { const n = sec.cables[key]; return n !== undefined && n !== "" && (!Number.isInteger(n) || n < 0); });
+        if (bad) { problems.push(`Wall ${w} ${pos.toLowerCase()}: cables as whole numbers`); box.classList.add("invalid"); }
+      }
     }
     for (const [sel, other, label] of [["UtilitySurveyed", "UtilityOther", "Utility (other)"], ["CoverType", "CoverTypeOther", "Cover type (other)"], ["InternalCondition", "InternalConditionOther", "Internal condition (other)"], ["GroundCondition", "GroundConditionOther", "Ground condition (other)"]]) {
       if (current[sel] === "Other" && !current[other]) { problems.push(label); flag(other); }
@@ -693,32 +704,69 @@
     return { blob: out.blob, ext: out.ext, name: out.ext === ext ? file.name : file.name.replace(/\.[^.]+$/, "") + "." + out.ext };
   }
 
-  // ------------------------------------------------------------ 6b. duct wall sketches
+  // ------------------------------------------------------------ 6b. duct arrangement
+  // Attached sketches only remain on surveys made before the structured inputs; they can be opened or removed
   const wallSketch = (w) => currentFiles.find((f) => f.category === "DuctWall" && f.number === w);
 
+  // One group of ducts on a wall: current.DuctSections[wall][Top|Middle|Bottom]
+  function ductSection(w, pos) {
+    const walls = current.DuctSections = current.DuctSections || {};
+    const wall = walls[w] = walls[w] || {};
+    return wall[pos] = wall[pos] || { on: false, size: "", rows: "", perRow: "", cableDia: "", cables: {} };
+  }
+
   function buildWallRows() {
-    const box = $("#wallList"), accept = "image/*," + C.sketchTypes.map((x) => "." + x).join(",");
+    const box = $("#wallList");
+    const range = (n) => Array.from({ length: n }, (_, i) => i + 1);
+    const options = (items, text) => `<option value="">Select…</option>` + items.map((v) => `<option value="${v}">${text(v)}</option>`).join("");
+    const sizeOptions = options(C.ductSizes, (v) => `ø${v} mm`), rowOptions = options(range(C.maxDuctRows), String), perRowOptions = options(range(C.maxDuctsPerRow), String);
     for (let w = 1; w <= C.wallCount; w++) {
       const row = document.createElement("div"); row.className = "wall-row"; row.dataset.wall = w;
       row.innerHTML = `<label class="wall-check"><input type="checkbox" name="DuctWall${w}"><span>Wall ${w}</span></label>
-        <div class="sketch-box"></div>
-        <div class="btn-row">
-          <button class="btn btn-primary" type="button" data-act="draw">Draw sketch</button>
-          <label class="btn file-btn" data-act="attach">Attach file<input type="file" accept="${accept}" hidden></label>
-          <button class="btn" type="button" data-act="open">Open</button>
-          <button class="btn btn-danger" type="button" data-act="remove">Remove</button>
+        <div class="duct-sections">
+          ${C.ductPositions.map((pos) => `<div class="duct-section" data-pos="${pos}">
+            <label class="section-check"><input type="checkbox" data-role="on"><span>${pos}</span></label>
+            <div class="section-body">
+              <div class="grid-qty">
+                <label class="field"><span>Duct size</span><select data-role="size">${sizeOptions}</select></label>
+                <label class="field"><span>Rows</span><select data-role="rows">${rowOptions}</select></label>
+                <label class="field"><span>Ducts per row</span><select data-role="perRow">${perRowOptions}</select></label>
+                <label class="field"><span>Cable diameter (mm)</span><input data-role="cableDia" type="number" min="0" step="any" inputmode="decimal"></label>
+              </div>
+              <p class="section-summary"></p>
+              <p class="hint duct-hint">Type the number of cables in each duct:</p>
+              <div class="duct-grid"></div>
+            </div>
+          </div>`).join("")}
+          <div class="btn-row"><button class="btn" type="button" data-act="sketch">View sketch</button></div>
+        </div>
+        <div class="attached-sketch">
+          <div class="sketch-box"></div>
+          <div class="btn-row">
+            <button class="btn" type="button" data-act="open">Open</button>
+            <button class="btn btn-danger" type="button" data-act="remove">Remove</button>
+          </div>
         </div>`;
-      row.querySelector('input[type="checkbox"]').addEventListener("change", (e) => {
-        if (e.target.checked && !wallSketch(w)) toast(`Add a sketch of Wall ${w} (required to mark complete)`);
-        else if (!e.target.checked && wallSketch(w)) toast(`A sketch is still attached to Wall ${w}. Use Remove if this wall no longer applies.`);
+      row.querySelector(`[name="DuctWall${w}"]`).addEventListener("change", (e) => {
+        if (!e.target.checked && wallSketch(w)) toast(`A sketch is still attached to Wall ${w}. Use Remove if this wall no longer applies.`);
         renderWalls();
       });
-      row.querySelector('[data-act="draw"]').addEventListener("click", () => { pad.wall = w; $("#sketchPadTitle").textContent = `Wall ${w} sketch`; openSketchPad(); });
-      row.querySelector('input[type="file"]').addEventListener("change", async (e) => {
-        const file = e.target.files && e.target.files[0]; e.target.value = "";
-        if (!file) return;
-        const out = await prepareSketchFile(file);
-        if (out) { await setWallSketch(w, out.blob, out.name, out.ext); toast(`Wall ${w} sketch attached`); }
+      for (const el of $$(".duct-section", row)) {
+        const pos = el.dataset.pos;
+        el.querySelector('[data-role="on"]').addEventListener("change", (e) => { ductSection(w, pos).on = e.target.checked; renderDuctSection(w, pos); updateSketchButton(w); });
+        for (const role of ["size", "rows", "perRow"]) {
+          el.querySelector(`[data-role="${role}"]`).addEventListener("change", (e) => { ductSection(w, pos)[role] = e.target.value === "" ? "" : Number(e.target.value); renderDuctSection(w, pos); updateSketchButton(w); });
+        }
+        el.querySelector('[data-role="cableDia"]').addEventListener("input", (e) => {
+          const sec = ductSection(w, pos);
+          sec.cableDia = e.target.value === "" ? "" : Number(e.target.value);
+          el.querySelector(".section-summary").textContent = sec.rows && sec.perRow ? EX.ductLabel(sec) : "";
+        });
+      }
+      row.querySelector('[data-act="sketch"]').addEventListener("click", () => {
+        readForm();
+        const url = objUrl(new Blob([EX.wallSketchSvg(current, w)], { type: "image/svg+xml" }));
+        $("#photoViewerImg").src = url; $("#photoViewerTitle").textContent = `Wall ${w} sketch`; $("#photoViewer").classList.remove("hidden");
       });
       row.querySelector('[data-act="open"]').addEventListener("click", () => openWallSketch(w));
       row.querySelector('[data-act="remove"]').addEventListener("click", async () => { if (confirm(`Remove the Wall ${w} sketch?`)) await removeWallSketch(w); });
@@ -726,32 +774,60 @@
     }
   }
 
+  // 6b legend: hovering shows it (CSS); a click or tap keeps it open until the next click, tap or Esc
+  function bindWallLegend() {
+    const btn = $("#btnWallLegend"), pop = $("#wallLegend");
+    const setOpen = (open) => { pop.classList.toggle("show", open); btn.setAttribute("aria-expanded", open ? "true" : "false"); };
+    btn.addEventListener("click", (e) => { e.stopPropagation(); setOpen(!pop.classList.contains("show")); });
+    document.addEventListener("click", () => setOpen(false));
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") setOpen(false); });
+  }
+
   function renderWalls() {
     const f = $("#surveyForm");
     for (const row of $$("#wallList .wall-row")) {
       const w = Number(row.dataset.wall), ticked = f.elements[`DuctWall${w}`].checked, sk = wallSketch(w);
       row.classList.toggle("ticked", ticked);
-      for (const act of ["draw", "attach"]) row.querySelector(`[data-act="${act}"]`).classList.toggle("hidden", !ticked);
-      for (const act of ["open", "remove"]) row.querySelector(`[data-act="${act}"]`).classList.toggle("hidden", !sk);
+      row.querySelector(".duct-sections").classList.toggle("hidden", !ticked);
+      for (const pos of C.ductPositions) renderDuctSection(w, pos);
+      updateSketchButton(w);
+      row.querySelector(".attached-sketch").classList.toggle("hidden", !sk);
+      if (!sk) continue;
       const box = row.querySelector(".sketch-box"); box.innerHTML = "";
-      box.classList.toggle("hidden", !ticked && !sk);
-      if (!sk) { box.textContent = "Sketch required. Draw one on screen or attach an image, PDF, SVG, DWG or DXF file (max 10 MB)."; continue; }
       if (/^(png|jpg|jpeg|gif|webp|svg|bmp)$/.test(sk.FileType)) { const img = document.createElement("img"); img.src = objUrl(sk.blob); box.appendChild(img); }
-      const t = document.createElement("span"); t.textContent = `${sk.FileName} · ${Math.round(sk.blob.size / 1024)} KB`; box.appendChild(t);
+      const t = document.createElement("span"); t.textContent = `Attached sketch: ${sk.FileName} · ${Math.round(sk.blob.size / 1024)} KB`; box.appendChild(t);
     }
   }
 
-  async function setWallSketch(w, blob, name, ext) {
-    const old = wallSketch(w);
-    if (old) { await DB.deleteFile(old.fileId); currentFiles = currentFiles.filter((f) => f !== old); }
-    const FileName = cleanFileName(name);
-    const rec = { RecordKey: current.RecordKey, category: "DuctWall", number: w, FileName,
-      RelativePath: `SurveyFiles\\${cleanFileName(current.RecordKey)}\\DuctWall${w}_${stamp()}_${FileName.slice(-40)}`,   // short: keeps Windows paths under 260 characters
-      FileType: ext, blob, capturedAt: nowIso(), caption: `Wall ${w}` };
-    rec.fileId = await DB.putFile(rec);
-    currentFiles.push(rec);
-    await wallSketchChanged();
+  function updateSketchButton(w) {
+    const ready = C.ductPositions.some((pos) => { const sec = ductSection(w, pos); return sec.on && sec.rows && sec.perRow; });
+    $(`#wallList .wall-row[data-wall="${w}"] [data-act="sketch"]`).closest(".btn-row").classList.toggle("hidden", !ready);
   }
+
+  // Draws the group as round boxes, laid out and sized like the ducts; each one takes that duct's number of cables
+  function renderDuctSection(w, pos) {
+    const sec = ductSection(w, pos), el = $(`#wallList .wall-row[data-wall="${w}"] .duct-section[data-pos="${pos}"]`);
+    el.querySelector('[data-role="on"]').checked = !!sec.on;
+    el.querySelector(".section-body").classList.toggle("hidden", !sec.on);
+    for (const role of ["size", "rows", "perRow"]) el.querySelector(`[data-role="${role}"]`).value = sec[role];
+    el.querySelector('[data-role="cableDia"]').value = sec.cableDia === undefined ? "" : sec.cableDia;
+    el.querySelector(".section-summary").textContent = sec.rows && sec.perRow ? EX.ductLabel(sec) : "";
+    const grid = el.querySelector(".duct-grid"); grid.innerHTML = "";
+    const drawn = !!(sec.on && sec.rows && sec.perRow);
+    el.querySelector(".duct-hint").classList.toggle("hidden", !drawn);
+    if (!drawn) return;
+    const px = Math.round(40 + (Number(sec.size || 25) - 25) / 275 * 24);
+    grid.style.gridTemplateColumns = `repeat(${sec.perRow}, ${px}px)`;
+    for (const { key, row, duct } of EX.ductCells(sec)) {
+      const inp = document.createElement("input"); inp.className = "duct-cell"; inp.type = "number"; inp.min = "0"; inp.step = "1"; inp.inputMode = "numeric";
+      inp.style.width = inp.style.height = px + "px";
+      inp.setAttribute("aria-label", `Wall ${w} ${pos.toLowerCase()}, row ${row}, duct ${duct}: number of cables`);
+      inp.value = sec.cables[key] === undefined ? "" : sec.cables[key];
+      inp.addEventListener("input", () => { sec.cables[key] = inp.value === "" ? "" : Number(inp.value); });
+      grid.appendChild(inp);
+    }
+  }
+
   async function removeWallSketch(w) {
     const old = wallSketch(w);
     if (old) { await DB.deleteFile(old.fileId); currentFiles = currentFiles.filter((f) => f !== old); }
@@ -780,7 +856,7 @@
   }
 
   // simple drawing pad
-  const pad = { strokes: [], cur: null, ctx: null, wall: 0 };   // wall: 0 = general asset sketch, 1-4 = duct wall
+  const pad = { strokes: [], cur: null, ctx: null };
   function openSketchPad() {
     const ov = $("#sketchPad"); ov.classList.remove("hidden");
     const cv = $("#sketchCanvas");
@@ -812,8 +888,7 @@
     $("#btnSketchSave").addEventListener("click", async () => {
       if (!pad.strokes.length) { toast("Nothing drawn yet", true); return; }
       const blob = await new Promise((res) => cv.toBlob(res, "image/png"));
-      if (pad.wall) await setWallSketch(pad.wall, blob, `${assetBase()}_Wall${pad.wall}.png`, "png");
-      else await setSketch(blob, `${assetBase()}_drawing.png`, "png");
+      await setSketch(blob, `${assetBase()}_drawing.png`, "png");
       $("#sketchPad").classList.add("hidden"); toast("Sketch attached");
     });
     window.addEventListener("resize", () => { if (!$("#sketchPad").classList.contains("hidden")) { const strokes = pad.strokes; openSketchPad(); pad.strokes = strokes; redrawPad(); } });
@@ -837,6 +912,7 @@
     for (const f of all) if (keys.has(f.RecordKey)) { bytes += f.blob.size; n++; }
     $("#exportEstimate").textContent = sel.length ? `${sel.length} survey${sel.length === 1 ? "" : "s"}, ${n} file${n === 1 ? "" : "s"}, about ${(bytes / 1048576).toFixed(1)} MB.` : "Nothing to export for this selection.";
     $("#btnExport").disabled = !sel.length;
+    renderSurveyorEstimate();
   }
   async function doExport() {
     const scope = $('input[name="scope"]:checked').value;
@@ -862,6 +938,36 @@
       console.error(e); out.textContent = "Export failed: " + e.message; out.classList.add("err");
     }
     btn.textContent = "Create export package"; renderExportStats();
+  }
+
+  // ------------------------------------------------------------ surveyors package
+  function surveyorSelection() {
+    const today = $('input[name="pkgScope"]:checked').value === "today", doneOnly = $("#pkgCompleteOnly").checked;
+    return surveys.filter((s) => (!today || s.SurveyDate === todayIso()) && (!doneOnly || s.SurveyStatus === "Complete"));
+  }
+  function renderSurveyorEstimate() {
+    const sel = surveyorSelection(), located = sel.filter(SP.hasLocation), left = sel.length - located.length;
+    const layers = new Set(located.map((s) => s.UtilitySurveyed || "Unspecified")).size;
+    $("#pkgEstimate").textContent = located.length
+      ? `${located.length} manhole${located.length === 1 ? "" : "s"} on ${layers} utility layer${layers === 1 ? "" : "s"}.${left ? ` ${left} left out because ${left === 1 ? "it has" : "they have"} no location.` : ""}`
+      : (left ? `Nothing to export: ${left} survey${left === 1 ? " has" : "s have"} no location.` : "Nothing to export for this selection.");
+    $("#btnSurveyorPackage").disabled = !located.length;
+  }
+  // This package is for checking only: surveys stay "not yet exported" until they go into an Access package
+  async function doSurveyorPackage() {
+    const sel = surveyorSelection(), located = sel.filter(SP.hasLocation);
+    if (!located.length) return;
+    const btn = $("#btnSurveyorPackage"), out = $("#pkgResult");
+    btn.disabled = true; btn.textContent = "Building package…"; out.textContent = ""; out.classList.remove("err");
+    try {
+      const blob = await SP.build(sel, safeDevice());
+      const name = EX.packageName(safeDevice(), "SurveyorsPackage");
+      const how = await EX.save(blob, name);
+      out.textContent = how === "cancelled" ? "Export cancelled." : `${name} ${how}. ${located.length} manhole${located.length === 1 ? "" : "s"} included.`;
+    } catch (e) {
+      console.error(e); out.textContent = "Export failed: " + e.message; out.classList.add("err");
+    }
+    btn.textContent = "Create surveyors package"; renderSurveyorEstimate();
   }
 
   // ------------------------------------------------------------ settings
@@ -934,13 +1040,16 @@
       await setSketch(out.blob, out.name, out.ext);
       toast("Sketch attached");
     });
-    $("#btnDrawSketch").addEventListener("click", () => { pad.wall = 0; $("#sketchPadTitle").textContent = "Sketch"; openSketchPad(); });
+    bindWallLegend();
+    $("#btnDrawSketch").addEventListener("click", openSketchPad);
     $("#btnRemoveSketch").addEventListener("click", async () => { if (currentFiles.some((f) => f.category === "Sketch") && confirm("Remove the sketch?")) { await removeSketch(); } });
     bindSketchPad();
     $("#btnPhotoViewerClose").addEventListener("click", () => $("#photoViewer").classList.add("hidden"));
 
     $$('input[name="scope"]').forEach((r) => r.addEventListener("change", renderExportStats));
     $("#btnExport").addEventListener("click", doExport);
+    for (const el of [...$$('input[name="pkgScope"]'), $("#pkgCompleteOnly")]) el.addEventListener("change", renderSurveyorEstimate);
+    $("#btnSurveyorPackage").addEventListener("click", doSurveyorPackage);
 
     $("#setSurveyor").addEventListener("change", async (e) => { settings.surveyorName = e.target.value.trim(); await DB.setSetting("surveyorName", settings.surveyorName); });
     $("#setDevice").addEventListener("change", async (e) => { settings.deviceName = e.target.value.trim() || "FIELD"; e.target.value = settings.deviceName; await DB.setSetting("deviceName", settings.deviceName); });
