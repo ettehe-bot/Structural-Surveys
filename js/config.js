@@ -3,7 +3,7 @@
    so that exported rows can be appended without any mapping. */
 window.SURVEY_CONFIG = {
   appName: "Structural Survey",
-  version: "1.8.0",
+  version: "1.12.0",
 
   // Offline basemap coverage: Abu Dhabi International (Zayed International) Airport
   bbox: [54.56, 24.37, 54.76, 24.51],          // [minLon, minLat, maxLon, maxLat]
@@ -13,7 +13,6 @@ window.SURVEY_CONFIG = {
   maxZoom: 19,
   basemapFile: "data/auh.pmtiles",
   // Optional CAD layers produced by tools\Build-AUH-Overlay.ps1 (the app works without them)
-  overlayFile: "data/overlay.geojson",       // utilities: manholes, pits, pipes (tappable)
   drawingBaseFile: "data/basemap.geojson",   // site plan basemap from Xref_C-SPBASE.dwg (display only)
   networksIndex: "data/utilities/index.json", // one layer per utility drawing (Utilites folder), each with its own switch
 
@@ -99,7 +98,7 @@ window.SURVEY_CONFIG = {
   ductWallColumns: ["RecordKey", "WallNo", "FileName", "RelativePath", "FileType", "FileSizeBytes", "AddedAt"],
 
   // Column order of ductsections.csv and ductconduits.csv - tblDuctSections and tblDuctConduits, keyed by RecordKey
-  ductSectionColumns: ["RecordKey", "WallNo", "SectionName", "DuctSizeMm", "DuctRows", "DuctsPerRow", "CableDiameterMm"],
+  ductSectionColumns: ["RecordKey", "WallNo", "SectionName", "DuctSizeMm", "DuctRows", "DuctsPerRow", "CableDiameterMm", "DepthInvertLevelM"],
   ductConduitColumns: ["RecordKey", "WallNo", "SectionName", "RowNo", "DuctNo", "CableCount"],
 
   // Fields that must be filled before a survey can be marked Complete

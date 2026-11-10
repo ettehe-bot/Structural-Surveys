@@ -28,13 +28,27 @@
     <div id="map"></div>
     <div id="crosshair" class="crosshair hidden" aria-hidden="true"></div>
     <div class="legend">
-      <span><i class="dot dot-draft"></i>Draft</span>
-      <span><i class="dot dot-complete"></i>Complete</span>
-      <span><i class="dot dot-urgent"></i>Urgent</span>
-      <span id="legendAsset" class="hidden"><i class="dot dot-asset"></i>Drawing asset</span>
+      <span id="legendDraft"><i class="dot dot-draft"></i>Draft</span>
+      <span id="legendComplete"><i class="dot dot-complete"></i>Complete</span>
+      <span id="legendUrgent"><i class="dot dot-urgent"></i>Urgent</span>
+      <span id="legendAsset" class="hidden"><i class="dot dot-asset"></i>Not surveyed</span>
     </div>
     <div class="map-toggles">
       <button id="btnLayers" class="map-toggle hidden" type="button" aria-expanded="false" aria-controls="layersPanel">Networks…</button>
+      <button id="btnManholes" class="map-toggle" type="button" aria-expanded="false" aria-controls="manholePanel">Surveyed Manholes</button>
+    </div>
+    <div id="manholePanel" class="layers-panel hidden" role="dialog" aria-label="Surveyed Manholes">
+      <header class="layers-head">
+        <b>Surveyed Manholes</b>
+        <button id="btnManholesClose" class="btn" type="button">Close</button>
+      </header>
+      <div class="layers-body">
+        <label class="layer-row"><input type="checkbox" id="chkMh-notSurveyed"><i class="dot dot-asset"></i><span>Not surveyed <small>drawing manholes with no survey</small></span></label>
+        <label class="layer-row"><input type="checkbox" id="chkMh-draft"><i class="dot dot-draft"></i><span>Draft</span></label>
+        <label class="layer-row"><input type="checkbox" id="chkMh-complete"><i class="dot dot-complete"></i><span>Completed</span></label>
+        <label class="layer-row"><input type="checkbox" id="chkMh-urgent"><i class="dot dot-urgent"></i><span>Urgent <small>urgent rectification required, draft or completed</small></span></label>
+        <p class="layers-note">Manholes show only while their utility network is switched on in Networks. Surveys with no matching network (no utility chosen yet, LV, 400Hz, or another utility with no drawing) always show.</p>
+      </div>
     </div>
     <div id="layersPanel" class="layers-panel hidden" role="dialog" aria-label="Map layers">
       <header class="layers-head">
@@ -43,9 +57,7 @@
       </header>
       <div class="layers-body">
         <div class="layers-group">Drawings</div>
-        <label class="layer-row" id="rowBase"><input type="checkbox" id="chkBase"><i class="swatch swatch-base"></i><span>Basemap <small>site plan</small></span></label>
-        <label class="layer-row" id="rowOverlay"><input type="checkbox" id="chkOverlay"><i class="swatch swatch-overlay"></i><span>Utilities <small>master plan</small></span></label>
-        <div class="layers-group">Utility networks
+        <label class="layer-row" id="rowBase"><input type="checkbox" id="chkBase"><i class="swatch swatch-base"></i><span>Basemap <small>site plan</small></span></label>        <div class="layers-group">Utility networks
           <span class="layers-actions"><button id="btnNetAll" type="button">All on</button><button id="btnNetNone" type="button">All off</button></span>
         </div>
         <div id="networkList"></div>
@@ -91,13 +103,20 @@
         <label><input type="radio" name="scope" value="pending" checked> Surveys not yet exported</label>
         <label><input type="radio" name="scope" value="today"> Surveys dated today</label>
         <label><input type="radio" name="scope" value="all"> All surveys on this device</label>
+        <label class="choice-sep"><input id="spAfterExport" type="checkbox"> Send to the SharePoint folder</label>
       </fieldset>
+      <p id="spHint" class="muted hidden">Add the SharePoint folder link in <b>Settings</b> to use this.</p>
       <p id="exportEstimate" class="muted"></p>
       <button id="btnExport" class="btn btn-primary btn-block" type="button">Create export package</button>
       <p id="exportResult" class="result"></p>
+      <div id="spNext" class="sp-next hidden">
+        <p id="spNextText"></p>
+        <button id="btnSpShare" class="btn btn-primary btn-block hidden" type="button">Share to OneDrive / SharePoint</button>
+        <a id="btnSpOpen" class="btn btn-block" target="_blank" rel="noopener noreferrer">Open SharePoint folder</a>
+      </div>
       <h3>After exporting</h3>
       <ol class="muted">
-        <li>Save or share the zip to the shared OneDrive folder.</li>
+        <li>Upload the zip to the SharePoint folder. With <b>Send to the SharePoint folder</b> ticked, the app takes you there after each export.</li>
         <li>In the Access database choose <b>Import field package</b> and select the zip.</li>
         <li>Imported surveys appear in the Survey register with their photos.</li>
       </ol>
@@ -122,6 +141,10 @@
       <h2>Settings</h2>
       <label class="field"><span>Default surveyor name</span><input id="setSurveyor" type="text" placeholder="e.g. A. Surveyor"></label>
       <label class="field"><span>Device name (used in record keys and file names)</span><input id="setDevice" type="text" placeholder="e.g. TABLET01" maxlength="20"></label>
+      <h3>SharePoint export folder</h3>
+      <p class="muted">Paste the link to the SharePoint folder that receives the daily exports. It is kept on this device only, not in the app's code.</p>
+      <label class="field"><span>Folder link (https://….sharepoint.com/…)</span><input id="setSpLink" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://aertec.sharepoint.com/:f:/s/…"></label>
+      <a id="btnSpTest" class="btn btn-block hidden" target="_blank" rel="noopener noreferrer">Open the folder to check the link</a>
       <h3>Storage</h3>
       <p id="storageInfo" class="muted">Checking storage…</p>
       <button id="btnPersist" class="btn btn-block" type="button">Ask browser to keep data permanently</button>
@@ -217,7 +240,7 @@
     <label class="field"><span>Other - describe item(s), if quantity is greater than 0</span><input name="FurnitureOtherDetails" type="text" maxlength="255"></label>
 
     <div class="legend-anchor">
-      <h3>6b. Duct arrangement - mark applicable <span class="nowrap">walls<button id="btnWallLegend" class="legend-tip" type="button" aria-label="Show the wall numbering legend" aria-expanded="false" aria-controls="wallLegend"><sup>+</sup></button></span></h3>
+      <h3>6b. Duct arrangement - mark applicable <span class="nowrap">walls<button id="btnWallLegend" class="legend-tip" type="button" aria-label="Show the wall numbering legend" aria-expanded="false" aria-controls="wallLegend"><sup>Legend +</sup></button></span></h3>
       <div id="wallLegend" class="legend-pop">
         <svg viewBox="50 20 1040 470" role="img" aria-label="Legend. Wall 1 is at the top, wall 2 on the right, wall 3 at the bottom and wall 4 on the left. An arrow from wall 4 points towards the runway, taxiway, road or shoulder.">
           <g fill="#000" font-family="Arial, Helvetica, sans-serif">

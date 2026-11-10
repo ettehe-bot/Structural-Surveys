@@ -46,7 +46,8 @@ window.SurveyExport = (function () {
   function ductLabel(sec) {
     const n = ductCount(sec), rows = Number(sec.rows);
     const cable = sec.cableDia > 0 ? `, cable ø${sec.cableDia} mm` : "";
-    return `${sec.size ? `ø${sec.size} mm` : "Size not chosen"}, ${ductNotation(sec)} (${rows} row${rows === 1 ? "" : "s"} of ${sec.perRow}, ${n} duct${n === 1 ? "" : "s"})${cable}`;
+    const level = sec.level !== undefined && sec.level !== "" ? `, depth/invert level ${sec.level} m` : "";
+    return `${sec.size ? `ø${sec.size} mm` : "Size not chosen"}, ${ductNotation(sec)} (${rows} row${rows === 1 ? "" : "s"} of ${sec.perRow}, ${n} duct${n === 1 ? "" : "s"})${cable}${level}`;
   }
 
   // Every duct in a group, row by row from the top and left to right
@@ -70,9 +71,12 @@ window.SurveyExport = (function () {
   // The automatic sketch of one wall: a tick box per group, then its ducts drawn to scale with their cable counts
   function wallSketchSvg(s, wall) {
     const byPos = (s.DuctSections || {})[wall] || {}, radius = (size) => 14 + (Number(size || 25) - 25) / 275 * 22, gap = 8, left = 64;
+    // Wide enough for the ducts and for each group's label (about 10 px per character at 17 px bold)
     const width = Math.max(760, ...C.ductPositions.map((pos) => {
       const sec = byPos[pos];
-      return sec && sec.on ? left + Number(sec.perRow || 0) * (2 * radius(sec.size) + gap) + 24 : 0;
+      if (!(sec && sec.on)) return 0;
+      const label = ductCount(sec) > 0 ? `${pos}: ${ductLabel(sec)}` : pos;
+      return Math.max(left + Number(sec.perRow || 0) * (2 * radius(sec.size) + gap), left + label.length * 10) + 24;
     }));
     const out = [];
     let y = 92;
@@ -124,7 +128,7 @@ window.SurveyExport = (function () {
       for (let w = 1; w <= C.wallCount; w++) {
         const active = activeSections(s, w);
         for (const { pos, sec } of active) {
-          sectionRows.push({ RecordKey: s.RecordKey, WallNo: w, SectionName: pos, DuctSizeMm: sec.size, DuctRows: sec.rows, DuctsPerRow: sec.perRow, CableDiameterMm: sec.cableDia });
+          sectionRows.push({ RecordKey: s.RecordKey, WallNo: w, SectionName: pos, DuctSizeMm: sec.size, DuctRows: sec.rows, DuctsPerRow: sec.perRow, CableDiameterMm: sec.cableDia, DepthInvertLevelM: sec.level });
           for (const { key, row: rowNo, duct } of ductCells(sec)) {
             conduitRows.push({ RecordKey: s.RecordKey, WallNo: w, SectionName: pos, RowNo: rowNo, DuctNo: duct, CableCount: sec.cables ? sec.cables[key] : "" });
           }
@@ -177,7 +181,7 @@ window.SurveyExport = (function () {
       exportedAt: new Date().toISOString(),
       surveys: surveyRows.length, photos: photoRows.length, ductWallSketches: wallRows.length,
       ductSections: sectionRows.length, ducts: conduitRows.length,
-      format: "structural-survey-field-package/4"
+      format: "structural-survey-field-package/5"
     }, null, 2));
 
     // Photos are already JPEG - storing them uncompressed is faster on a phone
@@ -192,9 +196,23 @@ window.SurveyExport = (function () {
   }
 
   /* Hands the zip to the user: file picker on desktop, share sheet on phones
-     (OneDrive / Teams / email appear there), plain download as the fallback. */
-  async function save(blob, name) {
+     (OneDrive / Teams / email appear there), plain download as the fallback.
+     preferShare: try the share sheet before the file picker (used when sending to SharePoint).
+     Chrome on Android and Windows does not share .zip files, so those devices fall through to the picker or a download. */
+  function canShareFile(blob, name) {
+    try { return !!(navigator.canShare && navigator.canShare({ files: [new File([blob], name, { type: "application/zip" })] })); }
+    catch (e) { return false; }
+  }
+  async function share(blob, name) {
+    try { await navigator.share({ files: [new File([blob], name, { type: "application/zip" })], title: name }); return "shared"; }
+    catch (e) { return e.name === "AbortError" ? "cancelled" : "failed"; }
+  }
+  async function save(blob, name, opts) {
     const file = new File([blob], name, { type: "application/zip" });
+    if (opts && opts.preferShare && canShareFile(blob, name)) {
+      const how = await share(blob, name);
+      if (how !== "failed") return how;
+    }
     if (window.showSaveFilePicker) {
       try {
         const h = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: "Zip package", accept: { "application/zip": [".zip"] } }] });
@@ -213,5 +231,5 @@ window.SurveyExport = (function () {
     return "downloaded";
   }
 
-  return { build, save, packageName, fmt, toCsv, ductLabel, ductCells, wallSketchSvg };
+  return { build, save, share, canShareFile, packageName, fmt, toCsv, ductLabel, ductCells, wallSketchSvg };
 })();

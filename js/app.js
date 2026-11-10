@@ -16,7 +16,7 @@
   let currentFiles = [];            // files (photos + sketch) of the current survey
   let currentIsNew = false;
   let placing = false;
-  let settings = { surveyorName: "", deviceName: "FIELD" };
+  let settings = { surveyorName: "", deviceName: "FIELD", spLink: "", spAfterExport: true };
   let installPrompt = null;
   const objectUrls = new Set();
 
@@ -113,22 +113,108 @@
       map.on("mouseleave", "survey-points", () => map.getCanvas().style.cursor = "");
       map.on("click", onMapClick);
       mapReady = true;
-      // site plan first, so the utilities are drawn on top of it
+      // site plan first, so the utility networks are drawn on top of it
       loadDrawingBase().catch((e) => console.warn("Basemap drawing not loaded", e))
-        .then(loadOverlay).catch((e) => console.warn("Utilities not loaded", e))
         .then(loadNetworkIndex);
     });
     map.on("error", (e) => { if (e && e.error && !/glyph|font|pbf/i.test(String(e.error.message))) console.warn("map", e.error); });
   }
 
+  // Only the pins that pass the Surveyed Manholes filter and whose utility network is switched on
   function surveysGeoJson() {
-    return { type: "FeatureCollection", features: surveys.filter((s) => isNum(s.Latitude) && isNum(s.Longitude)).map((s) => ({
+    return { type: "FeatureCollection", features: surveys.filter((s) => hasLocation(s) && surveyShown(s)).map((s) => ({
       type: "Feature", geometry: { type: "Point", coordinates: [Number(s.Longitude), Number(s.Latitude)] },
       properties: { key: s.RecordKey, id: s.ManholePitID || "(no ID)", status: s.SurveyStatus, urgent: s.UrgentRectificationRequired || "" }
     })) };
   }
   const isNum = (v) => v !== null && v !== undefined && v !== "" && !isNaN(Number(v));
-  function updateMapData() { if (mapReady) map.getSource("surveys").setData(surveysGeoJson()); }
+  const hasLocation = (s) => isNum(s.Latitude) && isNum(s.Longitude);
+  function updateMapData() {
+    if (!mapReady) return;
+    map.getSource("surveys").setData(surveysGeoJson());
+    applyAssetFilters();
+  }
+
+  // ------------------------------------------------------------ surveyed manholes filter
+  // Not surveyed = drawing assets with no survey of the same ID; Draft, Completed and Urgent = survey pins.
+  // Urgent pins (red) belong to the Urgent switch whatever their status, matching the pin colours.
+  let manholeFilter = { notSurveyed: true, draft: true, complete: true, urgent: true };
+  const MANHOLE_KEYS = ["notSurveyed", "draft", "complete", "urgent"];
+  const MANHOLE_NAMES = { draft: "Draft", complete: "Completed", urgent: "Urgent" };
+  const statusKey = (s) => (s.UrgentRectificationRequired === "Yes" ? "urgent" : s.SurveyStatus === "Complete" ? "complete" : "draft");
+  const idKey = (v) => String(v || "").trim().toLowerCase();
+
+  // The utility networks a survey belongs to. Several drawings can share one utility (HV has three);
+  // "Other" matches on its description (Irrigation), and the retired "Potable / Firewater" matches both.
+  function networksForSurvey(s) {
+    const u = s.UtilitySurveyed || "";
+    if (!u) return [];
+    if (u === "Potable / Firewater") return networks.filter((n) => n.utility === "Potable Water" || n.utility === "Fire Water");
+    if (u === "Other") {
+      const o = idKey(s.UtilityOther);
+      return o ? networks.filter((n) => n.utility === "Other" && (idKey(n.utilityOther) === o || idKey(n.name) === o)) : [];
+    }
+    return networks.filter((n) => n.utility === u);
+  }
+  // A survey with no matching network (no utility chosen yet, 400Hz, an unlisted "Other") has no switch to follow, so it stays visible
+  function surveyShown(s) {
+    if (!manholeFilter[statusKey(s)]) return false;
+    const linked = networksForSurvey(s);
+    return !linked.length || linked.some((n) => networkOn.has(n.id));
+  }
+  function hiddenReason(s) {
+    if (!hasLocation(s)) return "";
+    if (!manholeFilter[statusKey(s)]) return `${MANHOLE_NAMES[statusKey(s)]} manholes are filtered out of the map`;
+    const linked = networksForSurvey(s);
+    if (linked.length && !linked.some((n) => networkOn.has(n.id))) return `switch on ${linked.map((n) => n.name).join(" or ")} in Networks to see it on the map`;
+    return "";
+  }
+
+  // Hide drawing assets that already have a survey (the pin stands for them), and all assets when Not surveyed is off
+  function applyAssetFilters() {
+    if (!mapReady) return;
+    const surveyed = surveys.filter((s) => hasLocation(s) && idKey(s.ManholePitID));
+    const label = ["downcase", ["to-string", ["coalesce", ["get", "label"], ""]]];
+    const notIn = (ids) => (manholeFilter.notSurveyed ? ["!", ["in", label, ["literal", ids]]] : ["boolean", false]);
+    const isPoint = ["==", ["get", "kind"], "point"];
+    const set = (id, f) => { if (map.getLayer(id)) map.setFilter(id, f); };
+    for (const n of networks) {
+      if (!networkLoaded.has(n.id)) continue;
+      const ids = [...new Set(surveyed.filter((s) => { const l = networksForSurvey(s); return !l.length || l.includes(n); }).map((s) => idKey(s.ManholePitID)))];
+      set(`net-${n.id}-assets`, ["all", isPoint, notIn(ids)]);
+      set(`net-${n.id}-labels`, ["all", isPoint, ["has", "label"], notIn(ids)]);
+    }
+    updateAssetLegend();
+  }
+
+  function updateAssetLegend() {
+    $("#legendAsset").classList.toggle("hidden", !(networkOn.size > 0 && manholeFilter.notSurveyed));
+    $("#legendDraft").classList.toggle("hidden", !manholeFilter.draft);
+    $("#legendComplete").classList.toggle("hidden", !manholeFilter.complete);
+    $("#legendUrgent").classList.toggle("hidden", !manholeFilter.urgent);
+  }
+
+  function renderManholeFilter() {
+    for (const k of MANHOLE_KEYS) $(`#chkMh-${k}`).checked = !!manholeFilter[k];
+    const on = MANHOLE_KEYS.filter((k) => manholeFilter[k]).length, b = $("#btnManholes");
+    b.textContent = on === MANHOLE_KEYS.length ? "Surveyed Manholes: all" : `Surveyed Manholes: ${on} of ${MANHOLE_KEYS.length}`;
+  }
+
+  async function setManholeFilter(key, on) {
+    manholeFilter[key] = on;
+    renderManholeFilter();
+    updateMapData();
+    if (!on && key === "notSurveyed" && overlayPopup) { overlayPopup.remove(); overlayPopup = null; }
+    await DB.setSetting("manholeFilter", manholeFilter);
+  }
+
+  function toggleManholePanel(show) {
+    const p = $("#manholePanel"), open = show === undefined ? p.classList.contains("hidden") : show;
+    if (open) toggleLayersPanel(false);
+    p.classList.toggle("hidden", !open);
+    $("#btnManholes").setAttribute("aria-expanded", open ? "true" : "false");
+    $(".map-toggles").classList.toggle("hidden", open);
+  }
 
   // ------------------------------------------------------------ CAD site plan basemap (display only)
   const BASE_LAYERS = ["base-lines", "base-points", "base-texts"];
@@ -183,6 +269,7 @@
     $("#btnLayers").classList.remove("hidden");
     const saved = await DB.getSetting("networksOn", []);
     for (const id of saved || []) if (networks.some((n) => n.id === id)) await setNetworkVisible(id, true, false);
+    updateMapData();                 // pins of networks that stay off are hidden now the networks are known
     updateLayersButton();
   }
 
@@ -205,8 +292,8 @@
     const data = await resp.json();
     const src = `net-${n.id}`, c = n.color;
     map.addSource(src, { type: "geojson", data, maxzoom: 20, tolerance: 0.25 });
-    // networks sit above the site plan and below the master-plan utilities and the survey pins
-    const before = map.getLayer("overlay-lines") ? "overlay-lines" : "survey-points";
+    // networks sit above the site plan and below the survey pins
+    const before = "survey-points";
     map.addLayer({ id: `net-${n.id}-lines`, type: "line", source: src, filter: ["==", ["get", "kind"], "line"],
       layout: { "line-join": "round", "line-cap": "round" },
       paint: { "line-color": c, "line-opacity": 0.9, "line-width": ["interpolate", ["linear"], ["zoom"], 12, 0.8, 16, 2, 19, 3.5] } }, before);
@@ -236,8 +323,8 @@
     if (on) networkOn.add(id); else networkOn.delete(id);
     if (cb) cb.checked = on;
     if (!on && overlayPopup && overlayPopup._netId === id) { overlayPopup.remove(); overlayPopup = null; }
+    updateMapData();                 // survey pins follow their utility network
     if (save) await DB.setSetting("networksOn", [...networkOn]);
-    $("#legendAsset").classList.toggle("hidden", !(isVisible("overlay-assets") || networkOn.size));
     updateLayersButton();
   }
 
@@ -249,60 +336,20 @@
 
   function toggleLayersPanel(show) {
     const p = $("#layersPanel"), open = show === undefined ? p.classList.contains("hidden") : show;
+    if (open) toggleManholePanel(false);
     p.classList.toggle("hidden", !open);
     $("#btnLayers").setAttribute("aria-expanded", open ? "true" : "false");
     $(".map-toggles").classList.toggle("hidden", open);
     $("#rowBase").classList.toggle("hidden", !map.getSource("drawingbase"));
-    $("#rowOverlay").classList.toggle("hidden", !map.getSource("overlay"));
   }
 
-  // ------------------------------------------------------------ CAD utilities overlay
-  const OVERLAY_LAYERS = ["overlay-lines", "overlay-texts", "overlay-assets", "overlay-asset-labels"];
-  let overlayPopup = null;
-
-  async function loadOverlay() {
-    if (!C.overlayFile) return;
-    let data;
-    try {
-      const resp = await fetch(C.overlayFile);
-      if (!resp.ok) return;                       // no overlay published - nothing to show
-      data = await resp.json();
-    } catch (e) { console.warn("Overlay not loaded", e); return; }
-    if (!data || !Array.isArray(data.features) || !data.features.length) return;
-
-    map.addSource("overlay", { type: "geojson", data, maxzoom: 20, tolerance: 0.2 });
-    const before = "survey-points";              // survey pins stay on top of the drawing
-    map.addLayer({ id: "overlay-lines", type: "line", source: "overlay", filter: ["==", ["get", "kind"], "line"],
-      layout: { "line-join": "round", "line-cap": "round" },
-      paint: { "line-color": ["get", "color"], "line-opacity": 0.9, "line-width": ["interpolate", ["linear"], ["zoom"], 12, 0.5, 16, 1.4, 19, 2.5] } }, before);
-    map.addLayer({ id: "overlay-texts", type: "symbol", source: "overlay", minzoom: 17, filter: ["==", ["get", "kind"], "text"],
-      layout: { "text-field": ["get", "text"], "text-font": ["Noto Sans Regular"], "text-size": 11, "text-max-width": 12 },
-      paint: { "text-color": ["get", "color"], "text-halo-color": "#ffffff", "text-halo-width": 1.5 } }, before);
-    map.addLayer({ id: "overlay-assets", type: "circle", source: "overlay", minzoom: 13, filter: ["==", ["get", "kind"], "point"],
-      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 13, 2, 16, 5, 19, 8], "circle-color": "#ffffff",
-        "circle-stroke-color": ["get", "color"], "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 13, 1, 17, 2.5] } }, before);
-    map.addLayer({ id: "overlay-asset-labels", type: "symbol", source: "overlay", minzoom: 16, filter: ["all", ["==", ["get", "kind"], "point"], ["has", "label"]],
-      layout: { "text-field": ["get", "label"], "text-font": ["Noto Sans Medium"], "text-size": 11, "text-offset": [0, 1.0], "text-anchor": "top", "text-optional": true },
-      paint: { "text-color": "#1f2a52", "text-halo-color": "#ffffff", "text-halo-width": 1.5 } }, before);
-    map.on("mouseenter", "overlay-assets", () => map.getCanvas().style.cursor = "pointer");
-    map.on("mouseleave", "overlay-assets", () => map.getCanvas().style.cursor = "");
-
-    $("#btnLayers").classList.remove("hidden");
-    $("#legendAsset").classList.remove("hidden");
-    setOverlayVisible(await DB.getSetting("overlayVisible", true));
-  }
-
-  function setOverlayVisible(on) {
-    for (const id of OVERLAY_LAYERS) if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
-    $("#chkOverlay").checked = on;
-    $("#legendAsset").classList.toggle("hidden", !on && !networkOn.size);
-    if (!on && overlayPopup) { overlayPopup.remove(); overlayPopup = null; }
-  }
+  // ------------------------------------------------------------ tapping drawing assets
+  let overlayPopup = null;           // the popup of the tapped network asset
 
   // One tap handler: survey pins win over drawing assets; a finger-sized box makes small symbols easy to hit
   function onMapClick(ev) {
     const p = ev.point, box = [[p.x - 12, p.y - 12], [p.x + 12, p.y + 12]];
-    const assetLayers = ["overlay-assets"].concat(networks.filter((n) => networkOn.has(n.id)).map((n) => `net-${n.id}-assets`)).filter(isVisible);
+    const assetLayers = networks.filter((n) => networkOn.has(n.id)).map((n) => `net-${n.id}-assets`).filter(isVisible);
     const asset = assetLayers.length ? nearest(map.queryRenderedFeatures(box, { layers: assetLayers }), ev.lngLat) : null;
     if (placing) {
       if (asset) { map.jumpTo({ center: asset.geometry.coordinates }); toast("Snapped to " + (asset.properties.label || "drawing asset")); }
@@ -555,8 +602,9 @@
     await refreshSurveys();
     setStatusPill(); $("#btnDelete").classList.remove("hidden");
     $("#formTitle").textContent = current.ManholePitID || "Survey";
-    if (markComplete) { toast("Survey marked complete"); $("#formPanel").classList.add("hidden"); releaseUrls(); current = null; }
-    else toast("Draft saved");
+    const hidden = hiddenReason(current), note = hidden ? ` - ${hidden}` : "";
+    if (markComplete) { toast("Survey marked complete" + note); $("#formPanel").classList.add("hidden"); releaseUrls(); current = null; }
+    else toast("Draft saved" + note);
   }
 
   async function deleteSurvey() {
@@ -712,7 +760,7 @@
   function ductSection(w, pos) {
     const walls = current.DuctSections = current.DuctSections || {};
     const wall = walls[w] = walls[w] || {};
-    return wall[pos] = wall[pos] || { on: false, size: "", rows: "", perRow: "", cableDia: "", cables: {} };
+    return wall[pos] = wall[pos] || { on: false, size: "", rows: "", perRow: "", cableDia: "", level: "", cables: {} };
   }
 
   function buildWallRows() {
@@ -732,6 +780,7 @@
                 <label class="field"><span>Rows</span><select data-role="rows">${rowOptions}</select></label>
                 <label class="field"><span>Ducts per row</span><select data-role="perRow">${perRowOptions}</select></label>
                 <label class="field"><span>Cable diameter (mm)</span><input data-role="cableDia" type="number" min="0" step="any" inputmode="decimal"></label>
+                <label class="field"><span>Section depth / invert level (m)</span><input data-role="level" type="number" step="any"></label>
               </div>
               <p class="section-summary"></p>
               <p class="hint duct-hint">Type the number of cables in each duct:</p>
@@ -757,11 +806,14 @@
         for (const role of ["size", "rows", "perRow"]) {
           el.querySelector(`[data-role="${role}"]`).addEventListener("change", (e) => { ductSection(w, pos)[role] = e.target.value === "" ? "" : Number(e.target.value); renderDuctSection(w, pos); updateSketchButton(w); });
         }
-        el.querySelector('[data-role="cableDia"]').addEventListener("input", (e) => {
-          const sec = ductSection(w, pos);
-          sec.cableDia = e.target.value === "" ? "" : Number(e.target.value);
-          el.querySelector(".section-summary").textContent = sec.rows && sec.perRow ? EX.ductLabel(sec) : "";
-        });
+        // Typed values only update the summary, so the grid of ducts is not redrawn while typing
+        for (const role of ["cableDia", "level"]) {
+          el.querySelector(`[data-role="${role}"]`).addEventListener("input", (e) => {
+            const sec = ductSection(w, pos);
+            sec[role] = e.target.value === "" ? "" : Number(e.target.value);
+            el.querySelector(".section-summary").textContent = sec.rows && sec.perRow ? EX.ductLabel(sec) : "";
+          });
+        }
       }
       row.querySelector('[data-act="sketch"]').addEventListener("click", () => {
         readForm();
@@ -810,7 +862,7 @@
     el.querySelector('[data-role="on"]').checked = !!sec.on;
     el.querySelector(".section-body").classList.toggle("hidden", !sec.on);
     for (const role of ["size", "rows", "perRow"]) el.querySelector(`[data-role="${role}"]`).value = sec[role];
-    el.querySelector('[data-role="cableDia"]').value = sec.cableDia === undefined ? "" : sec.cableDia;
+    for (const role of ["cableDia", "level"]) el.querySelector(`[data-role="${role}"]`).value = sec[role] === undefined ? "" : sec[role];
     el.querySelector(".section-summary").textContent = sec.rows && sec.perRow ? EX.ductLabel(sec) : "";
     const grid = el.querySelector(".duct-grid"); grid.innerHTML = "";
     const drawn = !!(sec.on && sec.rows && sec.perRow);
@@ -914,24 +966,55 @@
     $("#btnExport").disabled = !sel.length;
     renderSurveyorEstimate();
   }
+  // ------------------------------------------------------------ SharePoint folder (link kept on the device, never in the code)
+  let lastExport = null;            // { blob, name } of the latest daily export, for "Share to OneDrive / SharePoint"
+  function spLinkValid(v) {
+    try {
+      const u = new URL(String(v || "").trim());
+      return u.protocol === "https:" && /(^|\.)sharepoint\.com$/i.test(u.hostname) ? u.href : "";
+    } catch (e) { return ""; }
+  }
+  function renderSpOptions() {
+    const link = spLinkValid(settings.spLink), cb = $("#spAfterExport");
+    cb.disabled = !link; cb.checked = !!link && settings.spAfterExport;
+    $("#spHint").classList.toggle("hidden", !!link);
+    $("#btnSpTest").classList.toggle("hidden", !link);
+    for (const a of [$("#btnSpTest"), $("#btnSpOpen")]) { if (link) a.href = link; else a.removeAttribute("href"); }
+  }
+  function showSpNext(blob, name, how) {
+    lastExport = { blob, name };
+    const shareable = EX.canShareFile(blob, name);
+    $("#spNextText").textContent = how === "shared"
+      ? `${name} was shared. If you sent it to OneDrive or SharePoint, use Open SharePoint folder to check it arrived.`
+      : how === "saved"
+        ? `${name} is saved. If you saved it into the synced SharePoint folder it uploads by itself. Otherwise open the folder, choose Upload and pick the file.`
+        : `${name} is in Downloads. Open the SharePoint folder, choose Upload (or + then Upload) and pick the file.`;
+    $("#btnSpShare").textContent = how === "shared" ? "Share again" : "Share to OneDrive / SharePoint";
+    $("#btnSpShare").classList.toggle("hidden", !shareable);
+    $("#spNext").classList.remove("hidden");
+  }
+
   async function doExport() {
     const scope = $('input[name="scope"]:checked').value;
     const sel = scopeSurveys(scope);
     if (!sel.length) return;
     const btn = $("#btnExport"), out = $("#exportResult");
+    const toSp = $("#spAfterExport").checked && !!spLinkValid(settings.spLink);
     btn.disabled = true; btn.textContent = "Building package…"; out.textContent = ""; out.classList.remove("err");
+    $("#spNext").classList.add("hidden"); lastExport = null;
     try {
       const all = await DB.allFiles();
       const byKey = {};
       for (const f of all) (byKey[f.RecordKey] = byKey[f.RecordKey] || []).push(f);
       const blob = await EX.build(sel, byKey, safeDevice());
       const name = EX.packageName(safeDevice());
-      const how = await EX.save(blob, name);
+      const how = await EX.save(blob, name, { preferShare: toSp });
       if (how === "cancelled") { out.textContent = "Export cancelled."; }
       else {
         const t = nowIso();
         for (const s of sel) { s._exportedAt = t; await DB.putSurvey(s); }
         out.textContent = `${name} (${(blob.size / 1048576).toFixed(1)} MB) ${how}. ${sel.length} survey${sel.length === 1 ? "" : "s"} marked as exported.`;
+        if (toSp) showSpNext(blob, name, how);
         await refreshSurveys();
       }
     } catch (e) {
@@ -1011,9 +1094,10 @@
     $("#btnNewSurvey").addEventListener("click", () => newSurvey());
     $("#btnLayers").addEventListener("click", () => toggleLayersPanel());
     $("#btnLayersClose").addEventListener("click", () => toggleLayersPanel(false));
-    $("#chkBase").addEventListener("change", async (e) => { setBaseVisible(e.target.checked); await DB.setSetting("baseVisible", e.target.checked); });
-    $("#chkOverlay").addEventListener("change", async (e) => { setOverlayVisible(e.target.checked); await DB.setSetting("overlayVisible", e.target.checked); });
-    $("#btnNetAll").addEventListener("click", async () => { for (const n of networks) await setNetworkVisible(n.id, true, false); await DB.setSetting("networksOn", [...networkOn]); });
+    $("#btnManholes").addEventListener("click", () => toggleManholePanel());
+    $("#btnManholesClose").addEventListener("click", () => toggleManholePanel(false));
+    for (const k of MANHOLE_KEYS) $(`#chkMh-${k}`).addEventListener("change", (e) => setManholeFilter(k, e.target.checked));
+    $("#chkBase").addEventListener("change", async (e) => { setBaseVisible(e.target.checked); await DB.setSetting("baseVisible", e.target.checked); });    $("#btnNetAll").addEventListener("click", async () => { for (const n of networks) await setNetworkVisible(n.id, true, false); await DB.setSetting("networksOn", [...networkOn]); });
     $("#btnNetNone").addEventListener("click", async () => { for (const n of networks) await setNetworkVisible(n.id, false, false); await DB.setSetting("networksOn", [...networkOn]); });
     $("#btnPlaceHere").addEventListener("click", () => endPlacing(true));
     $("#btnPlaceCancel").addEventListener("click", () => endPlacing(false));
@@ -1048,6 +1132,20 @@
 
     $$('input[name="scope"]').forEach((r) => r.addEventListener("change", renderExportStats));
     $("#btnExport").addEventListener("click", doExport);
+    $("#spAfterExport").addEventListener("change", async (e) => { settings.spAfterExport = e.target.checked; await DB.setSetting("spAfterExport", settings.spAfterExport); });
+    $("#btnSpShare").addEventListener("click", async () => {
+      if (!lastExport) return;
+      const how = await EX.share(lastExport.blob, lastExport.name);
+      if (how === "failed") toast("This device could not share the file - use Open SharePoint folder instead", true);
+    });
+    $("#setSpLink").addEventListener("change", async (e) => {
+      const raw = e.target.value.trim(), link = spLinkValid(raw);
+      if (raw && !link) { toast("That is not a SharePoint link (it should start with https:// and contain sharepoint.com)", true); e.target.value = settings.spLink; return; }
+      settings.spLink = link; e.target.value = link;
+      if (link) settings.spAfterExport = true;          // a newly added link switches the option on
+      await DB.setSetting("spLink", link); await DB.setSetting("spAfterExport", settings.spAfterExport);
+      renderSpOptions(); toast(link ? "SharePoint folder saved" : "SharePoint folder removed");
+    });
     for (const el of [...$$('input[name="pkgScope"]'), $("#pkgCompleteOnly")]) el.addEventListener("change", renderSurveyorEstimate);
     $("#btnSurveyorPackage").addEventListener("click", doSurveyorPackage);
 
@@ -1067,9 +1165,15 @@
     settings.surveyorName = await DB.getSetting("surveyorName", "");
     settings.deviceName = await DB.getSetting("deviceName", "FIELD");
     $("#setSurveyor").value = settings.surveyorName; $("#setDevice").value = settings.deviceName;
+    settings.spLink = spLinkValid(await DB.getSetting("spLink", ""));
+    settings.spAfterExport = (await DB.getSetting("spAfterExport", true)) !== false;
+    $("#setSpLink").value = settings.spLink;
+    const mf = await DB.getSetting("manholeFilter", null);
+    if (mf && typeof mf === "object") for (const k of MANHOLE_KEYS) if (typeof mf[k] === "boolean") manholeFilter[k] = mf[k];
     $("#appVersion").textContent = C.version;
     populateForm();
     bind();
+    renderManholeFilter(); updateAssetLegend(); renderSpOptions();
     await refreshSurveys();
     registerSw();
     initMap();

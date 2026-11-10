@@ -91,17 +91,6 @@
                        "utilityOther":  "Irrigation"
                    },
                    {
-                       "id":  "light-poles",
-                       "name":  "MTC light poles",
-                       "file":  "data/utilities/light-poles.geojson",
-                       "color":  "#bcbd22",
-                       "assets":  303,
-                       "lines":  7829,
-                       "sizeKB":  1626,
-                       "source":  "MTC Light Poles 1.dwg",
-                       "utility":  "LV"
-                   },
-                   {
                        "id":  "potable-water",
                        "name":  "Potable water",
                        "file":  "data/utilities/potable-water.geojson",
