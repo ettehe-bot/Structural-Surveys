@@ -3,7 +3,19 @@
    so that exported rows can be appended without any mapping. */
 window.SURVEY_CONFIG = {
   appName: "Structural Survey",
-  version: "1.12.0",
+  version: "1.14.0",
+
+  // Direct upload of the daily export to Google Drive (README: "Set up direct upload to Google Drive").
+  // Leave blank to only offer Share to Google Drive / Open Google Drive folder. These values are public by
+  // design: Google only accepts them from https://ettehe-bot.github.io and http://localhost:8080.
+  googleDrive: {
+    clientId: "537640692291-jrjvai84e1em1s9fcg2hp7shkvo0vdc5.apps.googleusercontent.com",   // OAuth client ID
+    apiKey: "AIzaSyDwsvefz_ZHSW8KMD_SXhewkNzLA3hthbU",   // API key restricted to the Google Picker API and the app's web address
+    appId: "537640692291",                                // Google Cloud project number
+    // Export folder every device starts with (Settings can change it). Only people the folder is shared
+    // with can open it, so keep its sharing on "Restricted" in Google Drive.
+    defaultFolder: { id: "144RH0qzulusuUMF8JYdLYSB8UqthbrWo", name: "EXPORTS" }
+  },
 
   // Offline basemap coverage: Abu Dhabi International (Zayed International) Airport
   bbox: [54.56, 24.37, 54.76, 24.51],          // [minLon, minLat, maxLon, maxLat]

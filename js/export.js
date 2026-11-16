@@ -197,7 +197,7 @@ window.SurveyExport = (function () {
 
   /* Hands the zip to the user: file picker on desktop, share sheet on phones
      (OneDrive / Teams / email appear there), plain download as the fallback.
-     preferShare: try the share sheet before the file picker (used when sending to SharePoint).
+     preferShare: try the share sheet before the file picker (used when sending to Google Drive).
      Chrome on Android and Windows does not share .zip files, so those devices fall through to the picker or a download. */
   function canShareFile(blob, name) {
     try { return !!(navigator.canShare && navigator.canShare({ files: [new File([blob], name, { type: "application/zip" })] })); }

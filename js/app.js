@@ -16,7 +16,7 @@
   let currentFiles = [];            // files (photos + sketch) of the current survey
   let currentIsNew = false;
   let placing = false;
-  let settings = { surveyorName: "", deviceName: "FIELD", spLink: "", spAfterExport: true };
+  let settings = { surveyorName: "", deviceName: "FIELD", driveFolder: { id: "", name: "", picked: false }, driveAfterExport: true };
   let installPrompt = null;
   const objectUrls = new Set();
 
@@ -966,32 +966,106 @@
     $("#btnExport").disabled = !sel.length;
     renderSurveyorEstimate();
   }
-  // ------------------------------------------------------------ SharePoint folder (link kept on the device, never in the code)
-  let lastExport = null;            // { blob, name } of the latest daily export, for "Share to OneDrive / SharePoint"
-  function spLinkValid(v) {
+  // ------------------------------------------------------------ Google Drive folder
+  // Two ways in: with direct upload set up (config.googleDrive), the zip uploads straight into the folder.
+  // Otherwise the zip is shared or saved and the folder opens for upload. Every device starts with the
+  // default folder from config.js; Settings can change it, and the choice is kept on the device.
+  let lastExport = null;            // { blob, name } of the latest daily export, for "Share to Google Drive"
+  const SD = window.SurveyDrive;
+  const mb = (n) => (n / 1048576).toFixed(1);
+  const defaultDriveFolder = () => { const d = SD.defaultFolder(); return d ? { id: d.id, name: d.name, picked: false } : { id: "", name: "", picked: false }; };
+  const isDefaultFolder = (f) => { const d = SD.defaultFolder(); return !!(d && f.id === d.id); };
+  // Google lets the app into a folder once someone chooses it through Connect with their Google account.
+  // The default folder is tried straight away, as the account may already have done that on another device.
+  const driveDirect = () => !!(settings.driveFolder.id && SD.configured() && (settings.driveFolder.picked || isDefaultFolder(settings.driveFolder)));
+  const folderLabel = () => (settings.driveFolder.name ? `“${settings.driveFolder.name}”` : "the Google Drive folder");
+
+  function renderDriveOptions() {
+    const f = settings.driveFolder, cb = $("#driveAfterExport");
+    cb.disabled = !f.id; cb.checked = !!f.id && settings.driveAfterExport;
+    $("#driveHint").classList.toggle("hidden", !!f.id);
+    $("#setDriveLink").value = f.id ? SD.folderUrl(f.id) : "";
+    $("#btnDriveTest").classList.toggle("hidden", !f.id);
+    for (const a of [$("#btnDriveTest"), $("#btnDriveOpen")]) { if (f.id) a.href = SD.folderUrl(f.id); else a.removeAttribute("href"); }
+    $("#btnDriveConnect").classList.toggle("hidden", !SD.configured());
+    $("#btnDriveConnect").textContent = f.picked ? "Choose a different folder" : "Connect to Google Drive and choose the folder";
+    $("#driveStatus").textContent = !f.id
+      ? (SD.configured() ? "Paste the folder link, or tap Connect to choose the folder in Google Drive." : "Paste the folder link.")
+      : f.picked && driveDirect() ? `Exports upload straight into ${folderLabel()}.`
+        : driveDirect() ? `Exports upload straight into ${folderLabel()}. On a new device, tap Connect once and choose ${folderLabel()}, so Google lets the app use it with your account.`
+          : SD.configured() ? "Exports are shared or saved, then the folder opens for upload. Tap Connect to upload straight into the folder instead."
+            : "Exports are shared or saved, then the folder opens for upload.";
+  }
+
+  async function saveDriveFolder(folder) {
+    settings.driveFolder = folder;
+    if (folder.id) settings.driveAfterExport = true;          // a newly added folder switches the option on
+    await DB.setSetting("driveFolder", folder); await DB.setSetting("driveAfterExport", settings.driveAfterExport);
+    renderDriveOptions();
+  }
+
+  async function connectDrive() {
     try {
-      const u = new URL(String(v || "").trim());
-      return u.protocol === "https:" && /(^|\.)sharepoint\.com$/i.test(u.hostname) ? u.href : "";
-    } catch (e) { return ""; }
+      const picked = await SD.pickFolder(settings.driveFolder.id ? settings.driveFolder : SD.defaultFolder());
+      if (!picked) return;
+      await saveDriveFolder({ id: picked.id, name: picked.name, picked: true });
+      toast(`Exports will upload to ${folderLabel()}`);
+    } catch (e) { console.warn(e); toast(e.message, true); }
   }
-  function renderSpOptions() {
-    const link = spLinkValid(settings.spLink), cb = $("#spAfterExport");
-    cb.disabled = !link; cb.checked = !!link && settings.spAfterExport;
-    $("#spHint").classList.toggle("hidden", !!link);
-    $("#btnSpTest").classList.toggle("hidden", !link);
-    for (const a of [$("#btnSpTest"), $("#btnSpOpen")]) { if (link) a.href = link; else a.removeAttribute("href"); }
-  }
-  function showSpNext(blob, name, how) {
+
+  function showDriveNext(blob, name, how) {
     lastExport = { blob, name };
-    const shareable = EX.canShareFile(blob, name);
-    $("#spNextText").textContent = how === "shared"
-      ? `${name} was shared. If you sent it to OneDrive or SharePoint, use Open SharePoint folder to check it arrived.`
+    $("#driveNextText").textContent = how === "shared"
+      ? `${name} was shared. If you sent it to Google Drive, use Open Google Drive folder to check it arrived.`
       : how === "saved"
-        ? `${name} is saved. If you saved it into the synced SharePoint folder it uploads by itself. Otherwise open the folder, choose Upload and pick the file.`
-        : `${name} is in Downloads. Open the SharePoint folder, choose Upload (or + then Upload) and pick the file.`;
-    $("#btnSpShare").textContent = how === "shared" ? "Share again" : "Share to OneDrive / SharePoint";
-    $("#btnSpShare").classList.toggle("hidden", !shareable);
-    $("#spNext").classList.remove("hidden");
+        ? `${name} is saved. If you saved it into a folder synced by Google Drive for desktop it uploads by itself. Otherwise open the folder, choose New › File upload and pick the file.`
+        : `${name} is in Downloads. Open the Google Drive folder, tap + then Upload, and pick the file.`;
+    $("#btnDriveShare").textContent = how === "shared" ? "Share again" : "Share to Google Drive";
+    $("#btnDriveShare").classList.toggle("hidden", !EX.canShareFile(blob, name));
+    $("#driveNext").classList.remove("hidden");
+  }
+
+  // Exports that could not upload (no signal, sign-in cancelled) wait on the device until the next try
+  const getQueue = async () => (await DB.getSetting("driveQueue", [])) || [];
+  async function renderDriveQueue() {
+    const q = await getQueue(), box = $("#driveQueue");
+    box.classList.toggle("hidden", !q.length);
+    if (!q.length) return;
+    const size = q.reduce((n, x) => n + (x.blob ? x.blob.size : 0), 0);
+    $("#driveQueueText").textContent = `${q.length} export${q.length === 1 ? " is" : "s are"} waiting to upload to Google Drive (${mb(size)} MB): ${q.map((x) => x.name).join(", ")}.`;
+    $("#btnDriveQueueUpload").classList.toggle("hidden", !driveDirect());
+  }
+  async function queueExport(blob, name) {
+    const q = await getQueue(); q.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name, blob, at: nowIso() });
+    await DB.setSetting("driveQueue", q); await renderDriveQueue();
+  }
+  async function removeFromQueue(item) {
+    await DB.setSetting("driveQueue", (await getQueue()).filter((x) => x.id !== item.id));
+  }
+  async function uploadOne(blob, name, btn) {
+    const label = btn.textContent;
+    try {
+      return await SD.upload(blob, name, settings.driveFolder.id, (p) => { btn.textContent = `Uploading ${name}… ${Math.round(p * 100)}%`; });
+    } finally { btn.textContent = label; }
+  }
+  async function uploadQueue() {
+    const btn = $("#btnDriveQueueUpload"), signIn = SD.getToken();   // sign in straight from the tap
+    btn.disabled = true;
+    let done = 0;
+    try {
+      await signIn;
+      for (const item of await getQueue()) { await uploadOne(item.blob, item.name, btn); await removeFromQueue(item); done++; }
+      toast(`${done} export${done === 1 ? "" : "s"} uploaded to ${folderLabel()}`);
+    } catch (e) { console.warn(e); toast((done ? `${done} uploaded. ` : "") + e.message, true); }
+    btn.disabled = false; renderDriveQueue();
+  }
+  async function saveQueue() {
+    for (const item of await getQueue()) {
+      const how = await EX.save(item.blob, item.name);
+      if (how === "cancelled") break;
+      await removeFromQueue(item);
+    }
+    renderDriveQueue();
   }
 
   async function doExport() {
@@ -999,23 +1073,41 @@
     const sel = scopeSurveys(scope);
     if (!sel.length) return;
     const btn = $("#btnExport"), out = $("#exportResult");
-    const toSp = $("#spAfterExport").checked && !!spLinkValid(settings.spLink);
+    const toDrive = $("#driveAfterExport").checked && !!settings.driveFolder.id, direct = toDrive && driveDirect();
+    // Direct upload: start the Google sign-in now, while the tap still allows its window to open
+    const signIn = direct ? SD.getToken().catch((e) => e) : null;
     btn.disabled = true; btn.textContent = "Building package…"; out.textContent = ""; out.classList.remove("err");
-    $("#spNext").classList.add("hidden"); lastExport = null;
+    $("#driveNext").classList.add("hidden"); lastExport = null;
     try {
       const all = await DB.allFiles();
       const byKey = {};
       for (const f of all) (byKey[f.RecordKey] = byKey[f.RecordKey] || []).push(f);
       const blob = await EX.build(sel, byKey, safeDevice());
       const name = EX.packageName(safeDevice());
-      const how = await EX.save(blob, name, { preferShare: toSp });
-      if (how === "cancelled") { out.textContent = "Export cancelled."; }
-      else {
-        const t = nowIso();
-        for (const s of sel) { s._exportedAt = t; await DB.putSurvey(s); }
-        out.textContent = `${name} (${(blob.size / 1048576).toFixed(1)} MB) ${how}. ${sel.length} survey${sel.length === 1 ? "" : "s"} marked as exported.`;
-        if (toSp) showSpNext(blob, name, how);
+      const marked = `${sel.length} survey${sel.length === 1 ? "" : "s"} marked as exported.`;
+      const markExported = async () => { const t = nowIso(); for (const s of sel) { s._exportedAt = t; await DB.putSurvey(s); } };
+      if (direct) {
+        let problem = await signIn;
+        if (!(problem instanceof Error)) {
+          try { await uploadOne(blob, name, btn); problem = null; } catch (e) { problem = e; }
+        }
+        await markExported();
+        if (!problem) out.textContent = `${name} (${mb(blob.size)} MB) uploaded to ${folderLabel()}. ${marked}`;
+        else {
+          await queueExport(blob, name);
+          out.textContent = `${name} (${mb(blob.size)} MB) is kept on this device and not uploaded yet: ${problem.message.replace(/\.$/, "")}. Tap Upload waiting exports below to try again. ${marked}`;
+          out.classList.add("err");
+        }
         await refreshSurveys();
+      } else {
+        const how = await EX.save(blob, name, { preferShare: toDrive });
+        if (how === "cancelled") { out.textContent = "Export cancelled."; }
+        else {
+          await markExported();
+          out.textContent = `${name} (${mb(blob.size)} MB) ${how}. ${marked}`;
+          if (toDrive) showDriveNext(blob, name, how);
+          await refreshSurveys();
+        }
       }
     } catch (e) {
       console.error(e); out.textContent = "Export failed: " + e.message; out.classList.add("err");
@@ -1132,19 +1224,24 @@
 
     $$('input[name="scope"]').forEach((r) => r.addEventListener("change", renderExportStats));
     $("#btnExport").addEventListener("click", doExport);
-    $("#spAfterExport").addEventListener("change", async (e) => { settings.spAfterExport = e.target.checked; await DB.setSetting("spAfterExport", settings.spAfterExport); });
-    $("#btnSpShare").addEventListener("click", async () => {
+    $("#driveAfterExport").addEventListener("change", async (e) => { settings.driveAfterExport = e.target.checked; await DB.setSetting("driveAfterExport", settings.driveAfterExport); });
+    $("#btnDriveShare").addEventListener("click", async () => {
       if (!lastExport) return;
       const how = await EX.share(lastExport.blob, lastExport.name);
-      if (how === "failed") toast("This device could not share the file - use Open SharePoint folder instead", true);
+      if (how === "failed") toast("This device could not share the file - use Open Google Drive folder instead", true);
     });
-    $("#setSpLink").addEventListener("change", async (e) => {
-      const raw = e.target.value.trim(), link = spLinkValid(raw);
-      if (raw && !link) { toast("That is not a SharePoint link (it should start with https:// and contain sharepoint.com)", true); e.target.value = settings.spLink; return; }
-      settings.spLink = link; e.target.value = link;
-      if (link) settings.spAfterExport = true;          // a newly added link switches the option on
-      await DB.setSetting("spLink", link); await DB.setSetting("spAfterExport", settings.spAfterExport);
-      renderSpOptions(); toast(link ? "SharePoint folder saved" : "SharePoint folder removed");
+    $("#btnDriveQueueUpload").addEventListener("click", uploadQueue);
+    $("#btnDriveQueueSave").addEventListener("click", saveQueue);
+    $("#btnDriveConnect").addEventListener("click", connectDrive);
+    $("#setDriveLink").addEventListener("change", async (e) => {
+      const raw = e.target.value.trim(), id = SD.folderIdFromLink(raw);
+      if (raw && !id) { toast("That is not a Google Drive folder link (it should start with https://drive.google.com/drive/folders/)", true); renderDriveOptions(); return; }
+      // an emptied field goes back to the default folder
+      const folder = id ? { id, name: "", picked: false } : defaultDriveFolder();
+      if (isDefaultFolder(folder)) folder.name = SD.defaultFolder().name;
+      if (folder.id === settings.driveFolder.id) { renderDriveOptions(); return; }
+      await saveDriveFolder(folder);
+      toast(!folder.id ? "Google Drive folder removed" : id ? "Google Drive folder saved" : `Back to the default folder ${folderLabel()}`);
     });
     for (const el of [...$$('input[name="pkgScope"]'), $("#pkgCompleteOnly")]) el.addEventListener("change", renderSurveyorEstimate);
     $("#btnSurveyorPackage").addEventListener("click", doSurveyorPackage);
@@ -1157,6 +1254,12 @@
     $("#btnInstall").addEventListener("click", async () => { if (!installPrompt) return; installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; $("#btnInstall").classList.add("hidden"); });
     window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; $("#btnInstall").classList.remove("hidden"); });
     window.addEventListener("online", setNet); window.addEventListener("offline", setNet);
+    window.addEventListener("online", async () => {
+      if (!driveDirect()) return;
+      SD.preload();
+      const n = (await getQueue()).length;
+      if (n) toast(`Back online - open Export and tap Upload waiting exports (${n})`);
+    });
   }
 
   // ------------------------------------------------------------ start
@@ -1165,15 +1268,16 @@
     settings.surveyorName = await DB.getSetting("surveyorName", "");
     settings.deviceName = await DB.getSetting("deviceName", "FIELD");
     $("#setSurveyor").value = settings.surveyorName; $("#setDevice").value = settings.deviceName;
-    settings.spLink = spLinkValid(await DB.getSetting("spLink", ""));
-    settings.spAfterExport = (await DB.getSetting("spAfterExport", true)) !== false;
-    $("#setSpLink").value = settings.spLink;
+    const df = await DB.getSetting("driveFolder", null);
+    settings.driveFolder = df && typeof df === "object" && df.id ? { id: String(df.id), name: String(df.name || ""), picked: !!df.picked } : defaultDriveFolder();
+    settings.driveAfterExport = (await DB.getSetting("driveAfterExport", true)) !== false;
     const mf = await DB.getSetting("manholeFilter", null);
     if (mf && typeof mf === "object") for (const k of MANHOLE_KEYS) if (typeof mf[k] === "boolean") manholeFilter[k] = mf[k];
     $("#appVersion").textContent = C.version;
     populateForm();
     bind();
-    renderManholeFilter(); updateAssetLegend(); renderSpOptions();
+    renderManholeFilter(); updateAssetLegend(); renderDriveOptions(); renderDriveQueue();
+    if (driveDirect()) SD.preload();
     await refreshSurveys();
     registerSw();
     initMap();
