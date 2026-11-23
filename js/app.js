@@ -16,7 +16,7 @@
   let currentFiles = [];            // files (photos + sketch) of the current survey
   let currentIsNew = false;
   let placing = false;
-  let settings = { surveyorName: "", deviceName: "FIELD", driveFolder: { id: "", name: "", picked: false }, driveAfterExport: true };
+  let settings = { surveyorName: "", deviceName: "FIELD", driveFolder: { id: "", name: "", picked: false }, driveAfterExport: true, pkgToDrive: true };
   let installPrompt = null;
   const objectUrls = new Set();
 
@@ -981,8 +981,9 @@
   const folderLabel = () => (settings.driveFolder.name ? `“${settings.driveFolder.name}”` : "the Google Drive folder");
 
   function renderDriveOptions() {
-    const f = settings.driveFolder, cb = $("#driveAfterExport");
+    const f = settings.driveFolder, cb = $("#driveAfterExport"), pcb = $("#pkgToDrive");
     cb.disabled = !f.id; cb.checked = !!f.id && settings.driveAfterExport;
+    pcb.disabled = !f.id; pcb.checked = !!f.id && settings.pkgToDrive;
     $("#driveHint").classList.toggle("hidden", !!f.id);
     $("#setDriveLink").value = f.id ? SD.folderUrl(f.id) : "";
     $("#btnDriveTest").classList.toggle("hidden", !f.id);
@@ -1134,11 +1135,29 @@
     if (!located.length) return;
     const btn = $("#btnSurveyorPackage"), out = $("#pkgResult");
     btn.disabled = true; btn.textContent = "Building package…"; out.textContent = ""; out.classList.remove("err");
+    // Same Google Drive folder as the daily export: start the sign-in now, while the tap still allows its window
+    const toDrive = $("#pkgToDrive").checked && !!settings.driveFolder.id, direct = toDrive && driveDirect();
+    const signIn = direct ? SD.getToken().catch((e) => e) : null;
     try {
       const blob = await SP.build(sel, safeDevice());
       const name = EX.packageName(safeDevice(), "SurveyorsPackage");
-      const how = await EX.save(blob, name);
-      out.textContent = how === "cancelled" ? "Export cancelled." : `${name} ${how}. ${located.length} manhole${located.length === 1 ? "" : "s"} included.`;
+      const included = `${located.length} manhole${located.length === 1 ? "" : "s"} included.`;
+      if (direct) {
+        let problem = await signIn;
+        if (!(problem instanceof Error)) {
+          try { await uploadOne(blob, name, btn); problem = null; } catch (e) { problem = e; }
+        }
+        if (!problem) out.textContent = `${name} uploaded to ${folderLabel()}. ${included}`;
+        else {
+          await queueExport(blob, name);
+          out.textContent = `${name} is kept on this device and not uploaded yet: ${problem.message.replace(/\.$/, "")}. Tap Upload waiting exports above to try again. ${included}`;
+          out.classList.add("err");
+        }
+      } else {
+        const how = await EX.save(blob, name, { preferShare: toDrive });
+        out.textContent = how === "cancelled" ? "Export cancelled."
+          : `${name} ${how}. ${included}` + (toDrive && how !== "shared" ? " Use Open Google Drive folder above to upload it." : "");
+      }
     } catch (e) {
       console.error(e); out.textContent = "Export failed: " + e.message; out.classList.add("err");
     }
@@ -1225,6 +1244,7 @@
     $$('input[name="scope"]').forEach((r) => r.addEventListener("change", renderExportStats));
     $("#btnExport").addEventListener("click", doExport);
     $("#driveAfterExport").addEventListener("change", async (e) => { settings.driveAfterExport = e.target.checked; await DB.setSetting("driveAfterExport", settings.driveAfterExport); });
+    $("#pkgToDrive").addEventListener("change", async (e) => { settings.pkgToDrive = e.target.checked; await DB.setSetting("pkgToDrive", settings.pkgToDrive); });
     $("#btnDriveShare").addEventListener("click", async () => {
       if (!lastExport) return;
       const how = await EX.share(lastExport.blob, lastExport.name);
@@ -1271,6 +1291,7 @@
     const df = await DB.getSetting("driveFolder", null);
     settings.driveFolder = df && typeof df === "object" && df.id ? { id: String(df.id), name: String(df.name || ""), picked: !!df.picked } : defaultDriveFolder();
     settings.driveAfterExport = (await DB.getSetting("driveAfterExport", true)) !== false;
+    settings.pkgToDrive = (await DB.getSetting("pkgToDrive", true)) !== false;
     const mf = await DB.getSetting("manholeFilter", null);
     if (mf && typeof mf === "object") for (const k of MANHOLE_KEYS) if (typeof mf[k] === "boolean") manholeFilter[k] = mf[k];
     $("#appVersion").textContent = C.version;

@@ -1,7 +1,7 @@
 /* Service worker: precaches the whole app (code, basemap, fonts) so it runs with no signal.
    Bump CACHE_VERSION whenever any file changes; installed devices pick it up on next launch
    with a connection. */
-const CACHE_VERSION = "ss-field-v1.14.0";
+const CACHE_VERSION = "ss-field-v1.15.0";
 // Cached when present; the app works without it
 const OPTIONAL = ["./data/basemap.geojson"];
 // Utility network layers: the index lists one file per network; every listed file is cached too

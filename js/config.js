@@ -3,7 +3,7 @@
    so that exported rows can be appended without any mapping. */
 window.SURVEY_CONFIG = {
   appName: "Structural Survey",
-  version: "1.14.0",
+  version: "1.15.0",
 
   // Direct upload of the daily export to Google Drive (README: "Set up direct upload to Google Drive").
   // Leave blank to only offer Share to Google Drive / Open Google Drive folder. These values are public by
